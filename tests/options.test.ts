@@ -5,7 +5,7 @@ describe('options', () => {
     it('lists every value once with a label', () => {
         expect(LAYOUT_OPTIONS.map((o) => o.data)).toEqual(['corners', 'sides']);
         expect(SPEED_OPTIONS.map((o) => o.data)).toEqual(['smooth', 'balanced', 'fast']);
-        expect(OUTSIDE_OPTIONS.map((o) => o.label)).toEqual(['Off', 'Normal colour', 'Game artwork']);
+        expect(OUTSIDE_OPTIONS.map((o) => o.label)).toEqual(['Off', 'Normal colour', 'Artwork']);
     });
     it('names the colour boost', () => {
         expect(boostLabel(0)).toBe('Natural');

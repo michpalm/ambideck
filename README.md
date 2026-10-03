@@ -30,6 +30,8 @@ Ambideck is not in the Decky plugin store. In Game Mode:
 Quick Access (…) → Ambideck: on/off, **In this game**, **Layout** (Corners or Sides), **Brightness**,
 **Colour boost**, **Speed** (Smooth, Balanced, Fast), **Outside games** and **Run when docked**.
 
+<img src="docs/images/quick-access.png" alt="Ambideck in Quick Access" width="320">
+
 ## How it works
 
 The animation above is a real capture from the device, run through Ambideck's own colour code:

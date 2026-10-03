@@ -17,7 +17,7 @@ Run after installing a new build (Decky → Developer → Install plugin from UR
 | 11 | Charger plugged in mid-game (HueSync gradient) | Ambideck keeps the lights, no fighting; after quitting, gradient resumes |
 | 12 | Sleep mid-game, wake | Rings follow again after wake |
 | 13 | Outside games = Off | Rings dark in menus; game still follows |
-| 14 | Outside games = Game artwork, open a game page | Rings take the artwork's colours; leaving the page hands back |
+| 14 | Outside games = Artwork, open a game page | Rings take the artwork's colours; leaving the page hands back |
 | 15 | Dock with Run when docked off / on | Hands back / keeps following |
 | 16 | Disable HueSync in Decky, quit a game | Rainbow |
 | 17 | Start and quit a game 5 times | `journalctl --user -b \| grep "\[gamescope\].*pipewire" \| tail -3` never shows `error`; Steam recording still works |

@@ -12,7 +12,7 @@ export const SPEED_OPTIONS: { data: Speed; label: string }[] = [
 export const OUTSIDE_OPTIONS: { data: Outside; label: string }[] = [
     { data: 'off', label: 'Off' },
     { data: 'normal', label: 'Normal colour' },
-    { data: 'artwork', label: 'Game artwork' },
+    { data: 'artwork', label: 'Artwork' },
 ];
 
 export function boostLabel(boost: number): string {
