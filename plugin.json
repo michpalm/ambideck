@@ -1,0 +1,11 @@
+{
+  "name": "Ambideck",
+  "author": "Michael Palma",
+  "flags": ["root"],
+  "api_version": 1,
+  "publish": {
+    "tags": ["rgb", "lighting", "root"],
+    "description": "Ambilight for the ROG Xbox Ally: the stick lights follow what's on screen.",
+    "image": ""
+  }
+}
