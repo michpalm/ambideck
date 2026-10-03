@@ -1,6 +1,6 @@
 {
   "name": "ambideck",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "description": "Ambilight for the ROG Xbox Ally: the stick lights follow what's on screen",
   "type": "module",
   "scripts": {
