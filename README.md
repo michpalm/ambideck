@@ -87,7 +87,7 @@ A personal project, maintained on a best-effort basis. The code was written with
 - ROG Ally light protocol as documented by [HHD](https://github.com/hhd-dev/hhd) and the Linux `hid-asus-ally`
   driver (Luke D. Jones, Denis Benato).
 - Works alongside [HueSync](https://github.com/honjow/HueSync) by honjow through its public backend methods.
-- Demo footage: ULTRAKILL by Arsi "Hakita" Patala / New Blood Interactive.
+- Demo footage: Ori and the Blind Forest: Definitive Edition by Moon Studios / Xbox Game Studios.
 - Not affiliated with ASUS, Microsoft, Valve, Philips or any game shown.
 
 ## License
