@@ -1,6 +1,6 @@
 import { useSyncExternalStore } from 'react';
 import { backendKv, KvBackend } from './backend';
-import type { FollowSettings, Layout, Outside, Speed } from './types';
+import type { Dark, FollowSettings, Layout, Outside, Speed } from './types';
 
 export interface Settings {
     enabled: boolean;
@@ -9,13 +9,14 @@ export interface Settings {
     boost: number; // 0–100
     speed: Speed;
     outside: Outside;
+    dark: Dark;
     runDocked: boolean;
     perGame: Record<string, boolean>; // only games switched off are stored
 }
 
 export const DEFAULTS: Settings = {
     enabled: true, layout: 'corners', brightness: 70, boost: 58, speed: 'balanced', outside: 'normal',
-    runDocked: false, perGame: {},
+    dark: 'glow', runDocked: false, perGame: {},
 };
 
 const KEY = 'settings';
@@ -38,7 +39,8 @@ export function sanitize(raw: unknown): Settings {
         brightness: clamp(r.brightness, 10, 100, DEFAULTS.brightness),
         boost: clamp(r.boost, 0, 100, DEFAULTS.boost),
         speed: oneOf(r.speed, ['smooth', 'balanced', 'fast'] as const, DEFAULTS.speed),
-        outside: oneOf(r.outside, ['off', 'normal', 'artwork'] as const, DEFAULTS.outside),
+        outside: r.outside === 'artwork' ? 'follow' : oneOf(r.outside, ['off', 'normal', 'follow'] as const, DEFAULTS.outside),
+        dark: oneOf(r.dark, ['glow', 'off'] as const, DEFAULTS.dark),
         runDocked: typeof r.runDocked === 'boolean' ? r.runDocked : DEFAULTS.runDocked,
         perGame,
     };
@@ -79,7 +81,7 @@ export function useSettings(): Settings {
 }
 
 export function followSettings(s: Settings): FollowSettings {
-    return { layout: s.layout, brightness: s.brightness, boost: s.boost, speed: s.speed };
+    return { layout: s.layout, brightness: s.brightness, boost: s.boost, speed: s.speed, dark: s.dark };
 }
 
 export function isOnForGame(s: Settings, appId: string): boolean {

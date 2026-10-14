@@ -40,7 +40,7 @@ class Plugin:
         decky.logger.info(f"{LOG} backend started")
 
     async def _unload(self):
-        self.backend.shutdown()
+        await asyncio.to_thread(self.backend.shutdown)
         decky.logger.info(f"{LOG} backend stopped")
 
     async def kv_get(self, key: str):
@@ -52,18 +52,22 @@ class Plugin:
     async def get_status(self):
         return self.backend.status()
 
+    async def get_version(self) -> str:
+        return decky.DECKY_PLUGIN_VERSION
+
+    # These touch hidraw or run pw-dump (follow), and can wait on the backend lock: keep them off Decky's event loop.
     async def show(self, zones) -> None:
-        self.backend.show(zones)
+        await asyncio.to_thread(self.backend.show, zones)
 
     async def rainbow(self, keep_following: bool = False) -> None:
-        self.backend.rainbow(bool(keep_following))
+        await asyncio.to_thread(self.backend.rainbow, bool(keep_following))
 
     async def off(self) -> None:
-        self.backend.off()
+        await asyncio.to_thread(self.backend.off)
 
     async def follow(self, settings) -> bool:
-        return self.backend.follow(settings)
+        return await asyncio.to_thread(self.backend.follow, settings)
 
     async def stop(self) -> None:
-        self.backend.stop()
+        await asyncio.to_thread(self.backend.stop)
 

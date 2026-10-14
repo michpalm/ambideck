@@ -1,13 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import { createController } from '../src/controller';
 import type { HueSync, RestoreResult } from '../src/huesync/bridge';
-import type { FollowSettings, Zones } from '../src/types';
+import type { FollowSettings } from '../src/types';
 
-const FOLLOW: FollowSettings = { layout: 'corners', brightness: 70, boost: 58, speed: 'balanced' };
+const FOLLOW: FollowSettings = { layout: 'corners', brightness: 70, boost: 58, speed: 'balanced', dark: 'glow' };
 const CTX = { appId: '1', onCharger: false };
-const ZONES: Zones = [[1, 1, 1], [2, 2, 2], [3, 3, 3], [4, 4, 4]];
 
-function setup(opts: { present?: boolean; restore?: RestoreResult; art?: Zones | null; stopFails?: boolean } = {}) {
+function setup(opts: { present?: boolean; restore?: RestoreResult; stopFails?: boolean } = {}) {
     const log: string[] = [];
     const pending: (() => void)[] = [];
     const backend = {
@@ -27,7 +26,6 @@ function setup(opts: { present?: boolean; restore?: RestoreResult; art?: Zones |
     };
     const controller = createController({
         backend, hueSync,
-        artwork: async () => (log.push('art'), opts.art === undefined ? ZONES : opts.art),
         later: (fn) => {
             pending.push(fn);
             return () => {
@@ -40,7 +38,7 @@ function setup(opts: { present?: boolean; restore?: RestoreResult; art?: Zones |
         for (const fn of pending.splice(0)) fn();
         await controller.idle();
     };
-    return { controller, log, flushLater };
+    return { controller, log, flushLater, pending };
 }
 
 describe('controller', () => {
@@ -85,20 +83,44 @@ describe('controller', () => {
         await controller.apply({ kind: 'pause' }, FOLLOW, CTX);
         expect(log).toEqual(['stop']);
     });
-    it('shows artwork, or hands back when there is none', async () => {
-        const a = setup();
-        await a.controller.apply({ kind: 'artwork', appId: '9' }, FOLLOW, { appId: null, onCharger: false });
-        expect(a.log).toEqual(['pause', 'art', 'show']);
-        const b = setup({ art: null });
-        await b.controller.apply({ kind: 'follow' }, FOLLOW, CTX);
-        b.log.length = 0;
-        await b.controller.apply({ kind: 'artwork', appId: '9' }, FOLLOW, { appId: null, onCharger: false });
-        expect(b.log).toEqual(['pause', 'art', 'stop', 'restore']);
+    it('keeps following from a game to the home screen, only asking HueSync to step aside again', async () => {
+        const { controller, log, flushLater } = setup();
+        await controller.apply({ kind: 'follow' }, FOLLOW, { appId: '1', onCharger: false });
+        await flushLater();
+        log.length = 0;
+        await controller.apply({ kind: 'follow' }, FOLLOW, { appId: null, onCharger: false });
+        expect(log).toEqual(['pause']);
+        await flushLater();
+        expect(log).toEqual(['pause', 'pause']);
+    });
+    it('does nothing when only the charger changed while following', async () => {
+        const { controller, log, flushLater } = setup();
+        await controller.apply({ kind: 'follow' }, FOLLOW, { appId: '1', onCharger: false });
+        await flushLater();
+        log.length = 0;
+        await controller.apply({ kind: 'follow' }, FOLLOW, { appId: '1', onCharger: true });
+        expect(log).toEqual([]);
     });
     it('turns the lights off for outside games = off', async () => {
         const { controller, log } = setup();
         await controller.apply({ kind: 'off' }, FOLLOW, { appId: null, onCharger: false });
         expect(log).toEqual(['pause', 'off']);
+    });
+    it('repeats the HueSync pause after turning the lights off', async () => {
+        const { controller, log, flushLater } = setup();
+        await controller.apply({ kind: 'off' }, FOLLOW, CTX);
+        expect(log).toEqual(['pause', 'off']);
+        await flushLater();
+        expect(log).toEqual(['pause', 'off', 'pause']);
+    });
+    it('drops a repeat whose decision is no longer current', async () => {
+        const { controller, log, pending } = setup();
+        await controller.apply({ kind: 'follow' }, FOLLOW, CTX);
+        const stale = pending.slice();
+        await controller.apply({ kind: 'pause' }, FOLLOW, CTX);
+        stale.forEach((fn) => fn());
+        await controller.idle();
+        expect(log.filter((l) => l === 'pause')).toHaveLength(1);
     });
     it('runs overlapping applies one at a time, in order', async () => {
         const { controller, log } = setup();

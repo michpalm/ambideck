@@ -13,15 +13,16 @@ interface SteamWindow {
 
 const steam = () => (window as unknown as SteamWindow).SteamClient;
 
-/** The first of these Steam events that exists and works (none may, on some Steam builds). */
-const firstWorking = (names: [scope: 'System' | 'User', name: string][], cb: () => void) => {
+/** The first of these Steam events that exists and works; null if none does (some Steam builds). */
+const firstWorking = (names: [scope: 'System' | 'User', name: string][], cb: () => void): (() => void) | null => {
     for (const [scope, name] of names) {
-        const fn = steam()?.[scope]?.[name];
+        const target = steam()?.[scope];
+        const fn = target?.[name];
         if (typeof fn !== 'function') continue;
         let works = true;
         const stop = safeRegister((inner) => {
             try {
-                return fn(inner);
+                return fn.call(target, inner);
             } catch (error) {
                 works = false;
                 throw error;
@@ -29,7 +30,7 @@ const firstWorking = (names: [scope: 'System' | 'User', name: string][], cb: () 
         }, cb);
         if (works) return stop;
     }
-    return () => {};
+    return null;
 };
 
 const backendEvent = (event: string, cb: (value: boolean) => void) => {
@@ -40,9 +41,6 @@ const backendEvent = (event: string, cb: (value: boolean) => void) => {
 export function steamSituationDeps(): SituationDeps {
     return {
         runningAppId: () => (Router.MainRunningApp?.appid ? String(Router.MainRunningApp.appid) : null),
-        currentPath: () =>
-            (Router as unknown as { WindowStore?: { GamepadUIMainWindowInstance?: { m_history?: { location?: { pathname?: string } } } } })
-                .WindowStore?.GamepadUIMainWindowInstance?.m_history?.location?.pathname ?? null,
         onSuspend: (cb) => firstWorking([['System', 'RegisterForOnSuspendRequest'], ['User', 'RegisterForPrepareForSystemSuspendProgress']], cb),
         onResume: (cb) => firstWorking([['System', 'RegisterForOnResumeFromSuspend'], ['User', 'RegisterForResumeSuspendedGamesProgress']], cb),
         // Steam's battery event throws on some builds; the backend reads the charger from the system instead.

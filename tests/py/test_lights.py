@@ -1,8 +1,10 @@
 import os
+import threading
+import time
 
 import pytest
 
-from ambideck.lights import Lights, find_hidraw, hidiocsfeature, mode_reports, zone_report
+from ambideck.lights import Lights, LightsHandle, find_hidraw, hidiocsfeature, mode_reports, zone_report
 
 
 def test_zone_report_is_the_direct_mode_message():
@@ -66,3 +68,64 @@ def test_lights_send_feature_reports():
     assert sent[0] == (7, 0xC0404806, zone_report([(1, 2, 3)] * 4))
     assert [s[2] for s in sent[1:]] == mode_reports("rainbow")
     assert closed == [7]
+
+
+def test_handle_refinds_the_controller_after_a_failed_write(caplog):
+    class Broken:
+        def __init__(self):
+            self.closed = False
+
+        def show(self, zones):
+            raise OSError(19, "No such device")
+
+        def close(self):
+            self.closed = True
+
+    class Good:
+        def __init__(self):
+            self.shown = []
+
+        def show(self, zones):
+            self.shown.append(zones)
+
+    clock, broken, good, found = {"t": 0.0}, Broken(), Good(), []
+    h = LightsHandle(lambda: found.pop() if found else None, broken, clock=lambda: clock["t"])
+    for _ in range(30):
+        assert h.show([(1, 1, 1)] * 4) is False
+    assert broken.closed
+    assert len([r for r in caplog.records if "light controller" in r.getMessage()]) == 1
+    found.append(good)
+    clock["t"] = 1.9
+    assert h.show([(1, 1, 1)] * 4) is False
+    clock["t"] = 2.1
+    assert h.show([(1, 1, 1)] * 4) is True and len(good.shown) == 1
+
+
+def test_handle_closes_a_lost_controller_once_when_threads_race():
+    class SlowBroken:
+        def __init__(self):
+            self.closes = 0
+
+        def show(self, zones):
+            time.sleep(0.05)
+            raise OSError(19, "No such device")
+
+        def close(self):
+            self.closes += 1
+
+    broken, errors = SlowBroken(), []
+    h = LightsHandle(lambda: None, broken)
+
+    def write():
+        try:
+            h.show([(1, 1, 1)] * 4)
+        except Exception as error:  # an unlocked race shows up as AttributeError on None
+            errors.append(error)
+
+    threads = [threading.Thread(target=write) for _ in range(2)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join(2)
+    assert broken.closes == 1 and errors == []
+

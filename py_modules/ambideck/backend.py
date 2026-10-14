@@ -8,6 +8,7 @@ from typing import Callable
 
 from .display import DockWatcher
 from .follower import Follower
+from .lights import LightsHandle
 
 log = logging.getLogger("ambideck")
 RESEND_S = 2.0  # same as the follower: wins against HueSync or the driver overriding the colours
@@ -36,6 +37,7 @@ class Backend:
         self._clock = clock
         self._static: tuple | None = None  # ("show", zones) or ("off",), re-sent like the follower does
         self._static_sent = 0.0
+        self._lock = threading.RLock()  # static colours, ownership and follow/stop: one caller at a time
         self._quit = threading.Event()
         self._worker: threading.Thread | None = None
         self._follower: Follower | None = None
@@ -44,7 +46,8 @@ class Backend:
         if not self._looked:
             self._looked = True
             try:
-                self._lights = self._find_lights()
+                first = self._find_lights()
+                self._lights = LightsHandle(self._find_lights, first, clock=self._clock) if first else None
             except OSError:
                 log.exception("[ambideck] could not open the light controller")
                 self._lights = None
@@ -60,63 +63,71 @@ class Backend:
         self._owns_lights = True
 
     def _resend_static(self) -> None:
-        if self._static is None or self._lights is None or self._clock() - self._static_sent < RESEND_S:
-            return
-        if self._static[0] == "show":
-            self._lights.show(self._static[1])
-        else:
-            self._lights.off()
-        self._static_sent = self._clock()
+        with self._lock:
+            if self._static is None or self._lights is None or self._clock() - self._static_sent < RESEND_S:
+                return
+            if self._static[0] == "show":
+                self._lights.show(self._static[1])
+            else:
+                self._lights.off()
+            self._static_sent = self._clock()
 
     def follow(self, settings) -> bool:
-        lights = self._get_lights()
-        if lights is None:
-            return False
-        self._static = None
-        if self._follower is None:
-            self._follower = Follower(self._make_capture, lights, self._emit, clock=self._clock)
-        self._follower.update(settings)
-        self._follower.start()
-        self._owns_lights = True
-        return True
+        with self._lock:
+            lights = self._get_lights()
+            if lights is None:
+                return False
+            self._static = None
+            if self._follower is None:
+                self._follower = Follower(self._make_capture, lights, self._emit, clock=self._clock)
+            self._follower.update(settings)
+            self._follower.start()
+            self._owns_lights = True
+            return True
 
     def status(self) -> dict:
-        return {"supported": self._get_lights() is not None, "docked": self._dock.current,
+        with self._lock:
+            supported = self._get_lights() is not None
+        return {"supported": supported, "docked": self._dock.current,
                 "onCharger": self._charger.current}
 
     def show(self, zones) -> None:
-        self._stop_following()
-        lights = self._get_lights()
-        if lights is None:
-            return
-        zones = _zones(zones)
-        lights.show(zones)
-        self._set_static(("show", zones))
+        with self._lock:
+            self._stop_following()
+            lights = self._get_lights()
+            if lights is None:
+                return
+            zones = _zones(zones)
+            lights.show(zones)
+            self._set_static(("show", zones))
 
     def rainbow(self, keep_following: bool = False) -> None:
         """keep_following: shown while the stream is lost; the follower keeps retrying and takes over again."""
-        if keep_following:
-            self._static = None
-        else:
-            self._stop_following()
-        lights = self._get_lights()
-        if lights is None:
-            return
-        lights.rainbow()
-        if not keep_following:
-            self._owns_lights = False
+        with self._lock:
+            if keep_following:
+                self._static = None
+            else:
+                self._stop_following()
+            lights = self._get_lights()
+            if lights is None:
+                return
+            lights.rainbow()
+            if not keep_following:
+                self._owns_lights = False
 
     def off(self) -> None:
-        self._stop_following()
-        lights = self._get_lights()
-        if lights is None:
-            return
-        lights.off()
-        self._set_static(("off",))
+        with self._lock:
+            self._stop_following()
+            lights = self._get_lights()
+            if lights is None:
+                return
+            lights.off()
+            self._set_static(("off",))
 
     def stop(self) -> None:
-        self._stop_following()
-        self._owns_lights = False
+        with self._lock:
+            self._stop_following()
+            self._owns_lights = False
 
     def tick(self) -> None:
         self._dock.tick()
@@ -138,7 +149,10 @@ class Backend:
 
     def shutdown(self) -> None:
         self._quit.set()
-        self._stop_following()
-        if self._owns_lights and not self._huesync_installed() and self._lights is not None:
-            self._lights.rainbow()
-            self._owns_lights = False
+        if self._worker is not None:
+            self._worker.join(2.0)
+        with self._lock:
+            self._stop_following()
+            if self._owns_lights and not self._huesync_installed() and self._lights is not None:
+                self._lights.rainbow()
+                self._owns_lights = False

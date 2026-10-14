@@ -68,6 +68,20 @@ class _PwBuffer(C.Structure):
     _fields_ = [("buffer", C.POINTER(_SpaBuffer)), ("user_data", C.c_void_p), ("size", C.c_uint64)]
 
 
+def frame_bytes(buf) -> tuple[bytes, int] | None:
+    """The frame in a dequeued pw_buffer and its stride (0 = not given), or None for anything unusable."""
+    spa = buf.contents.buffer
+    if not spa or spa.contents.n_datas < 1 or not spa.contents.datas:
+        return None
+    data = spa.contents.datas[0]
+    if not data.data or not data.chunk:
+        return None
+    chunk = data.chunk.contents
+    if chunk.size == 0 or chunk.flags & SPA_CHUNK_FLAG_CORRUPTED or chunk.offset + chunk.size > data.maxsize:
+        return None
+    return C.string_at(data.data + chunk.offset, chunk.size), chunk.stride
+
+
 _DESTROY = C.CFUNCTYPE(None, C.c_void_p)
 _STATE_CHANGED = C.CFUNCTYPE(None, C.c_void_p, C.c_int, C.c_int, C.c_char_p)
 _PARAM_CHANGED = C.CFUNCTYPE(None, C.c_void_p, C.c_uint32, C.c_void_p)
@@ -151,14 +165,13 @@ class GamescopeCapture:
             now = self._clock()
             if now - self._last < self._interval or "size" not in self._fmt:
                 return
-            data = buf.contents.buffer.contents.datas[0]
-            chunk = data.chunk.contents
-            if not data.data or chunk.size == 0 or chunk.flags & SPA_CHUNK_FLAG_CORRUPTED:
+            got = frame_bytes(buf)
+            if got is None:
                 return
             self._last = now
             width, height = self._fmt["size"]
-            frame = C.string_at(data.data + chunk.offset, chunk.size)
-            self._on_frame(frame, width, height, chunk.stride or width * 4)
+            frame, stride = got
+            self._on_frame(frame, width, height, stride or width * 4)
         finally:
             pw.pw_stream_queue_buffer(self._stream, buf)
 

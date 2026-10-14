@@ -1,3 +1,6 @@
+import threading
+import time
+
 from ambideck.backend import Backend
 
 
@@ -149,3 +152,40 @@ def test_rainbow_while_waiting_keeps_retrying():
     clock["t"] = 20.0
     backend.tick()
     assert len(caps) == 2  # a plain rainbow() ends following
+
+
+def test_off_waits_for_a_resend_in_progress():
+    gate, started = threading.Event(), threading.Event()
+
+    class SlowLights(FakeLights):
+        def show(self, zones):
+            started.set()
+            gate.wait(2)
+            super().show(zones)
+
+    lights, clock = SlowLights(), {"t": 0.0}
+    backend = Backend(find_lights=lambda: lights, docked=lambda: False, charger=lambda: False,
+                      emit=lambda *a: None, make_capture=lambda f, s, hz: FakeCapture(f, s, hz),
+                      huesync_installed=lambda: True, clock=lambda: clock["t"])
+    gate.set()
+    backend.show([[1, 1, 1]] * 4)
+    gate.clear()
+    started.clear()
+    clock["t"] = 2.1
+    worker = threading.Thread(target=backend.tick)
+    worker.start()
+    assert started.wait(2)
+    off = threading.Thread(target=backend.off)
+    off.start()
+    time.sleep(0.05)
+    gate.set()
+    worker.join(2)
+    off.join(2)
+    assert lights.calls[-1] == ("off",)
+
+
+def test_shutdown_joins_the_worker():
+    backend, _ = make(FakeLights())
+    backend.start_worker()
+    backend.shutdown()
+    assert not backend._worker.is_alive()

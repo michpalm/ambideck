@@ -1,14 +1,7 @@
-import json
-import os
-import subprocess
-import sys
-
 import pytest
 
-from ambideck.colour import (MIN_LEVEL, Smoother, analyse, boost, boost_factor, is_cut, quad_frame, region_colour,
+from ambideck.colour import (MIN_LEVEL, DarkGate, Smoother, analyse, boost, boost_factor, is_cut, quad_frame, region_colour,
                              regions, round_half_up, to_led, zone_target)
-
-ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 
 
 def test_round_half_up_differs_from_bankers_rounding():
@@ -76,9 +69,22 @@ def test_smoother_fades_and_jumps_on_cuts():
     assert is_cut(None, 0.9) is False and is_cut(0.05, 0.6) is True and is_cut(0.4, 0.5) is False
 
 
-def test_vectors_file_is_up_to_date():
-    path = os.path.join(ROOT, "tests", "vectors", "colour.json")
-    generated = subprocess.run([sys.executable, os.path.join(ROOT, "scripts", "make_vectors.py"), "--stdout"],
-                               capture_output=True, text=True, check=True).stdout
-    with open(path, encoding="utf-8") as f:
-        assert json.loads(generated) == json.load(f)
+def test_lift_brightens_dim_zones_and_keeps_bright_ones():
+    assert zone_target((255, 0, 0), 0.1, 1.0)[0] == pytest.approx(MIN_LEVEL + (1 - MIN_LEVEL) * 0.1 ** 0.6)
+    assert zone_target((255, 0, 0), 1.0, 0.5)[0] == pytest.approx(0.5)
+    assert zone_target((0, 0, 0), 0.0, 1.0) == pytest.approx((MIN_LEVEL,) * 3)
+
+
+def test_analysis_reports_each_zones_brightness():
+    frame = quad_frame(8, 4, [(0, 0, 0), (255, 255, 255), (0, 0, 0), (255, 255, 255)])
+    a = analyse(frame, 8, 4, 32, "corners", 0, 100)
+    assert a.values == pytest.approx([0.0, 1.0, 0.0, 1.0])
+
+
+def test_dark_gate_switches_with_a_gap_so_wobbling_scenes_dont_blink():
+    g = DarkGate()
+    assert g.update([0.03, 0.05, 0.5, 0.1]) == [True, False, False, False]
+    assert g.update([0.06, 0.03, 0.5, 0.1]) == [True, True, False, False]
+    assert g.update([0.09, 0.07, 0.5, 0.1]) == [False, True, False, False]
+    g.reset()
+    assert g.update([0.06] * 4) == [False] * 4

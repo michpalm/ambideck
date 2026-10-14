@@ -1,7 +1,7 @@
 import { DropdownItem, PanelSection, PanelSectionRow, SliderField, ToggleField } from '@decky/ui';
 import { useSituation, useSupported } from '../app';
 import { isOnForGame, settings, useSettings } from '../settings';
-import { boostLabel, LAYOUT_OPTIONS, OUTSIDE_OPTIONS, SPEED_OPTIONS } from './options';
+import { boostLabel, DARK_OPTIONS, LAYOUT_OPTIONS, OUTSIDE_OPTIONS, SPEED_OPTIONS } from './options';
 
 export function SettingsPanel() {
     const s = useSettings();
@@ -46,6 +46,10 @@ export function SettingsPanel() {
             <PanelSectionRow>
                 <DropdownItem label="Outside games" rgOptions={OUTSIDE_OPTIONS} selectedOption={s.outside}
                     onChange={(o) => settings.update({ outside: o.data })} />
+            </PanelSectionRow>
+            <PanelSectionRow>
+                <DropdownItem label="Dark scenes" rgOptions={DARK_OPTIONS} selectedOption={s.dark}
+                    onChange={(o) => settings.update({ dark: o.data })} />
             </PanelSectionRow>
             <PanelSectionRow>
                 <ToggleField label="Run when docked" checked={s.runDocked}

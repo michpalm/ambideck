@@ -6,10 +6,10 @@ import threading
 import time
 from typing import Callable
 
-from .colour import SPEEDS, Smoother, analyse, is_cut, to_led
+from .colour import SPEEDS, DarkGate, Smoother, analyse, is_cut, to_led
 
 log = logging.getLogger("ambideck")
-DEFAULTS = {"layout": "corners", "brightness": 70, "boost": 58, "speed": "balanced"}
+DEFAULTS = {"layout": "corners", "brightness": 70, "boost": 58, "speed": "balanced", "dark": "glow"}
 
 
 def clean_settings(raw) -> dict:
@@ -19,6 +19,8 @@ def clean_settings(raw) -> dict:
         out["layout"] = raw["layout"]
     if raw.get("speed") in SPEEDS:
         out["speed"] = raw["speed"]
+    if raw.get("dark") == "off":
+        out["dark"] = "off"
     for key, low, high in (("brightness", 10, 100), ("boost", 0, 100)):
         value = raw.get(key)
         if isinstance(value, (int, float)) and not isinstance(value, bool):
@@ -30,6 +32,7 @@ class Follower:
     RESEND_S = 2.0
     RETRY_S = 5.0
     MIN_GAP_S = 1.0 / 30
+    START_TIMEOUT_S = 10.0  # connected but never streaming: treat as lost
 
     def __init__(self, make_capture: Callable, lights, emit: Callable, clock: Callable[[], float] = time.monotonic):
         self._make_capture, self._lights, self._emit, self._clock = make_capture, lights, emit, clock
@@ -42,7 +45,9 @@ class Follower:
         self._state = "stopped"  # stopped | connecting | following | waiting
         self._lost = False
         self._retry_at = 0.0
+        self._connected_at = 0.0
         self._smoother = Smoother()
+        self._dark = DarkGate()
         self._prev_level: float | None = None
         self._last_leds: list | None = None
         self._last_sent = float("-inf")
@@ -75,28 +80,37 @@ class Follower:
         self._state = "stopped"
         self._lost = False
         self._smoother.reset()
+        self._dark.reset()
         self._prev_level = None
         self._last_leds = None
 
-    def _connect(self) -> None:
+    def _connect(self, due: float | None = None) -> None:
         with self._life:
             generation = self._generation
         hz = SPEEDS[self._settings["speed"]][1]
         capture = self._make_capture(self.on_frame, self.on_state, hz)
         self._state = "connecting"
+        self._connected_at = self._clock()  # before start(): a tick during pw-dump must see a fresh timestamp
         started = capture.start()  # runs pw-dump: slow enough for stop() to happen meanwhile
+        previous = None
         with self._life:
             current = self._wanted and generation == self._generation
             if started and current:
-                self._capture = capture
-                return
+                previous, self._capture = self._capture, capture  # never drop a running capture unstopped
+                self._connected_at = self._clock()
+        if started and current:
+            if previous is not None:
+                previous.stop()
+            return
         if started:
             capture.stop()
         if current:
-            self._to_waiting()
+            self._to_waiting(due)
 
-    def _to_waiting(self) -> None:
-        self._retry_at = self._clock() + self.RETRY_S
+    def _to_waiting(self, due: float | None = None) -> None:
+        """due: when the failed retry was scheduled, so retries stay RETRY_S apart however late the tick was."""
+        now = self._clock()
+        self._retry_at = now + self.RETRY_S if due is None else max(due + self.RETRY_S, now)
         if self._state != "waiting":
             self._state = "waiting"
             log.info("[ambideck] waiting for gamescope's stream")
@@ -119,7 +133,11 @@ class Follower:
         now = self._clock()
         cut = is_cut(self._prev_level, a.frame_level)
         self._prev_level = a.frame_level
-        values = self._smoother.step(a.targets, now, SPEEDS[s["speed"]][0], cut)
+        targets = a.targets
+        if s["dark"] == "off":
+            dark = self._dark.update(a.values)
+            targets = [(0.0, 0.0, 0.0) if d else t for d, t in zip(dark, targets)]
+        values = self._smoother.step(targets, now, SPEEDS[s["speed"]][0], cut)
         self._send([to_led(v) for v in values], now)
 
     def _send(self, leds: list, now: float, force: bool = False) -> None:
@@ -132,17 +150,16 @@ class Follower:
                 change = max(abs(a - b) for z1, z2 in zip(leds, self._last_leds) for a, b in zip(z1, z2))
                 if change <= 1 and now - self._last_sent < self.RESEND_S:
                     return
-            try:
-                self._lights.show(leds)
-            except OSError:
-                log.exception("[ambideck] writing the lights failed")
-                return
+            if self._lights.show(leds) is False:
+                return  # controller missing: try again with the next frame
             self._last_leds, self._last_sent = leds, now
 
     def tick(self) -> None:  # worker thread
         if not self._wanted:
             return
         now = self._clock()
+        if self._state == "connecting" and now - self._connected_at >= self.START_TIMEOUT_S:
+            self._lost = True
         if self._lost:
             self._lost = False
             with self._life:
@@ -151,6 +168,6 @@ class Follower:
                 capture.stop()
             self._to_waiting()
         if self._state == "waiting" and now >= self._retry_at:
-            self._connect()
+            self._connect(due=self._retry_at)
         if self._state == "following" and self._last_leds is not None and now - self._last_sent >= self.RESEND_S:
             self._send(self._last_leds, now, force=True)

@@ -22,8 +22,8 @@ describe('decide', () => {
     it('follows the outside-games choice', () => {
         expect(decide(sit({}), set({}))).toEqual({ kind: 'handBack' });
         expect(decide(sit({}), set({ outside: 'off' }))).toEqual({ kind: 'off' });
-        expect(decide(sit({}), set({ outside: 'artwork' }))).toEqual({ kind: 'handBack' });
-        expect(decide(sit({ artworkAppId: '9' }), set({ outside: 'artwork' }))).toEqual({ kind: 'artwork', appId: '9' });
-        expect(decide(sit({ artworkAppId: '9', docked: true }), set({ outside: 'artwork' }))).toEqual({ kind: 'handBack' });
+        expect(decide(sit({}), set({ outside: 'follow' }))).toEqual({ kind: 'follow' });
+        expect(decide(sit({ docked: true }), set({ outside: 'follow' }))).toEqual({ kind: 'handBack' });
+        expect(decide(sit({ docked: true }), set({ outside: 'follow', runDocked: true }))).toEqual({ kind: 'follow' });
     });
 });

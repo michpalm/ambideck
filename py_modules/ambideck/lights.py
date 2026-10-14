@@ -7,9 +7,13 @@ from __future__ import annotations
 
 import fcntl
 import glob
+import logging
 import os
 import threading
+import time
 from typing import Callable, Sequence
+
+log = logging.getLogger("ambideck")
 
 LED_NAME = "ally:rgb:joystick_rings"
 REPORT_LEN = 64
@@ -88,3 +92,58 @@ class Lights:
 
     def close(self) -> None:
         self._close(self._fd)
+
+
+class LightsHandle:
+    """The light controller, found again if it goes away (a failed write; it may come back as another hidraw node).
+
+    Each command returns False when nothing was written."""
+
+    def __init__(self, find: Callable, first, clock: Callable[[], float] = time.monotonic, retry_s: float = 2.0):
+        self._find, self._lights, self._clock, self._retry_s = find, first, clock, retry_s
+        self._retry_at = 0.0
+        self._lost = False
+        self._lock = threading.Lock()  # PipeWire, worker and Decky threads all write the lights
+
+    def _do(self, command: str, *args) -> bool:
+        with self._lock:
+            return self._do_locked(command, *args)
+
+    def _do_locked(self, command: str, *args) -> bool:
+        if self._lights is None:
+            if self._clock() < self._retry_at:
+                return False
+            try:
+                self._lights = self._find()
+            except OSError:
+                self._lights = None
+            if self._lights is None:
+                self._retry_at = self._clock() + self._retry_s
+                return False
+        try:
+            getattr(self._lights, command)(*args)
+        except OSError:
+            if not self._lost:
+                log.warning("[ambideck] lost the light controller; looking for it again", exc_info=True)
+                self._lost = True
+            try:
+                self._lights.close()
+            except OSError:
+                pass
+            self._lights = None
+            self._retry_at = self._clock() + self._retry_s
+            return False
+        if self._lost:
+            log.info("[ambideck] light controller back")
+            self._lost = False
+        return True
+
+    def show(self, zones) -> bool:
+        return self._do("show", zones)
+
+    def rainbow(self) -> bool:
+        return self._do("rainbow")
+
+    def off(self) -> bool:
+        return self._do("off")
+

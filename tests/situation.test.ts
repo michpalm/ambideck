@@ -1,13 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { artworkFromPath, createSituation, SituationDeps } from '../src/situation';
+import { createSituation, SituationDeps } from '../src/situation';
 
 function fakeDeps() {
     const cbs: Record<string, (v?: unknown) => void> = {};
     let tick: () => void = () => {};
-    const state = { app: null as string | null, path: '/library/home' };
+    const state = { app: null as string | null };
     const deps: SituationDeps = {
         runningAppId: () => state.app,
-        currentPath: () => state.path,
         onSuspend: (cb) => ((cbs.suspend = cb), () => {}),
         onResume: (cb) => ((cbs.resume = cb), () => {}),
         onCharger: (cb) => ((cbs.charger = cb as (v?: unknown) => void), () => {}),
@@ -18,17 +17,8 @@ function fakeDeps() {
     return { deps, cbs, state, tick: () => tick() };
 }
 
-describe('artworkFromPath', () => {
-    it('finds the game page', () => {
-        expect(artworkFromPath('/library/app/1245620')).toBe('1245620');
-        expect(artworkFromPath('/library/app/1245620/achievements')).toBe('1245620');
-        expect(artworkFromPath('/library/home')).toBeNull();
-        expect(artworkFromPath(null)).toBeNull();
-    });
-});
-
 describe('createSituation', () => {
-    it('tracks game, page, sleep, charger and dock, notifying only on change', async () => {
+    it('tracks game, sleep, charger and dock, notifying only on change', async () => {
         const { deps, cbs, state, tick } = fakeDeps();
         const s = createSituation(deps);
         let calls = 0;
@@ -37,13 +27,12 @@ describe('createSituation', () => {
         await Promise.resolve();
         expect(s.get().docked).toBe(true);
         state.app = '730';
-        state.path = '/library/app/730';
         tick();
         tick();
         cbs.suspend();
         cbs.resume();
         cbs.charger(true);
-        expect(s.get()).toEqual({ appId: '730', suspended: false, docked: true, onCharger: true, artworkAppId: '730' });
+        expect(s.get()).toEqual({ appId: '730', suspended: false, docked: true, onCharger: true });
         expect(calls).toBe(5);
     });
 });
@@ -58,5 +47,28 @@ describe('a Steam source that throws', () => {
         cbs.charger(true);
         expect(s.get().appId).toBe('1');
         expect(s.get().onCharger).toBe(true);
+    });
+});
+
+describe('sleep and wake events', () => {
+    it('ignores sleep events when wake events are unavailable', () => {
+        const { deps, cbs } = fakeDeps();
+        let stopped = false;
+        const s = createSituation({ ...deps,
+            onSuspend: (cb) => ((cbs.suspend = cb), () => { stopped = true; }),
+            onResume: () => null });
+        s.start();
+        cbs.suspend();
+        expect(s.get().suspended).toBe(false);
+        expect(stopped).toBe(true);
+    });
+    it('ignores wake events when sleep events throw', () => {
+        const { deps } = fakeDeps();
+        let stopped = false;
+        const s = createSituation({ ...deps,
+            onSuspend: () => { throw new Error('Unknown method'); },
+            onResume: () => () => { stopped = true; } });
+        expect(() => s.start()).not.toThrow();
+        expect(stopped).toBe(true);
     });
 });

@@ -1,12 +1,11 @@
 import type { Backend } from './backend';
 import type { Decision } from './decide';
 import type { HueSync } from './huesync/bridge';
-import type { FollowSettings, Zones } from './types';
+import type { FollowSettings } from './types';
 
 export interface ControllerDeps {
     backend: Backend;
     hueSync: HueSync;
-    artwork(appId: string, s: FollowSettings): Promise<Zones | null>;
     later(fn: () => void, ms: number): () => void; // returns cancel
 }
 
@@ -16,7 +15,7 @@ interface Ctx {
 }
 
 const REPEAT_MS = 1000;
-const HAS_LIGHTS = new Set(['follow', 'artwork', 'off']);
+const HAS_LIGHTS = new Set(['follow', 'off']);
 
 export function createController(deps: ControllerDeps) {
     // At start-up HueSync (or nothing) has the lights. 'unknown' after a failed step, so the next decision runs again.
@@ -34,9 +33,13 @@ export function createController(deps: ControllerDeps) {
         cancelRepeat?.();
         cancelRepeat = null;
     };
+    /** Runs job once more after REPEAT_MS, unless the decision has changed by then. */
     const repeat = (job: () => Promise<unknown>) => {
         cancel();
-        cancelRepeat = deps.later(() => void enqueue(async () => void (await job())), REPEAT_MS);
+        const owner = current;
+        cancelRepeat = deps.later(() => void enqueue(async () => {
+            if (current === owner) await job();
+        }), REPEAT_MS);
     };
     const takeOver = async () => {
         if (deps.hueSync.present()) await deps.hueSync.pause();
@@ -59,7 +62,14 @@ export function createController(deps: ControllerDeps) {
         const previous = current;
         const sameSettings = JSON.stringify(follow) === JSON.stringify(nextFollow);
         if (JSON.stringify(previous) === JSON.stringify(decision) && sameSettings) {
+            const appChanged = ctx.appId !== nextCtx.appId;
             ctx = nextCtx;
+            // HueSync re-applies its setting when the running app changes, also while Ambideck keeps following.
+            if (decision.kind === 'follow' && appChanged) {
+                cancel();
+                await takeOver();
+                if (deps.hueSync.present()) repeat(takeOver);
+            }
             return;
         }
         current = decision;
@@ -83,18 +93,11 @@ export function createController(deps: ControllerDeps) {
                 }
                 await deps.backend.follow(nextFollow);
                 return;
-            case 'artwork': {
-                cancel();
-                await takeOver();
-                const zones = await deps.artwork(decision.appId, nextFollow);
-                if (zones) await deps.backend.show(zones);
-                else await handBack();
-                return;
-            }
             case 'off':
                 cancel();
                 await takeOver();
                 await deps.backend.off();
+                if (deps.hueSync.present()) repeat(takeOver);
                 return;
             case 'pause':
                 cancel();

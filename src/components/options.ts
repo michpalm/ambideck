@@ -1,4 +1,4 @@
-import type { Layout, Outside, Speed } from '../types';
+import type { Dark, Layout, Outside, Speed } from '../types';
 
 export const LAYOUT_OPTIONS: { data: Layout; label: string }[] = [
     { data: 'corners', label: 'Corners' },
@@ -12,7 +12,11 @@ export const SPEED_OPTIONS: { data: Speed; label: string }[] = [
 export const OUTSIDE_OPTIONS: { data: Outside; label: string }[] = [
     { data: 'off', label: 'Off' },
     { data: 'normal', label: 'Normal colour' },
-    { data: 'artwork', label: 'Artwork' },
+    { data: 'follow', label: 'Follow' },
+];
+export const DARK_OPTIONS: { data: Dark; label: string }[] = [
+    { data: 'glow', label: 'Glow' },
+    { data: 'off', label: 'Off' },
 ];
 
 export function boostLabel(boost: number): string {

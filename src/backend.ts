@@ -9,6 +9,7 @@ export interface Status {
 
 export const backend = {
     getStatus: callable<[], Status>('get_status'),
+    getVersion: callable<[], string>('get_version'),
     follow: callable<[settings: FollowSettings], void>('follow'),
     show: callable<[zones: Zones], void>('show'),
     rainbow: callable<[keepFollowing?: boolean], void>('rainbow'),

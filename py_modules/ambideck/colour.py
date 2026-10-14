@@ -1,12 +1,13 @@
-"""Frame → four zone colours. Mirrored exactly in src/colour.ts (artwork mode); tests/vectors/colour.json keeps
-them in step. Targets are perceived levels 0..1 per channel; to_led applies gamma for the LEDs."""
+"""Frame → four zone colours. Targets are perceived levels 0..1 per channel; to_led applies gamma for the LEDs."""
 from __future__ import annotations
 
 import math
 from dataclasses import dataclass
 
 BASE_WEIGHT = 0.05  # grey pixels still count a little, so grey/white scenes stay grey/white
-MIN_LEVEL = 0.15  # faint glow on black scenes (perceived)
+MIN_LEVEL = 0.15  # faint glow on black scenes (perceived), with Dark scenes = Glow
+LIFT = 0.6  # brightness curve: dim scenes show their colour more strongly, full brightness unchanged
+DARK_OFF, DARK_ON = 0.04, 0.08  # Dark scenes = Off: a zone goes dark below DARK_OFF, lights again above DARK_ON
 GAMMA = 2.2
 SAMPLE_STEP = 4  # every 4th pixel each way: 144 per corner of a 128x72 frame, cheap in pure Python
 CUT_THRESHOLD = 0.35  # change of whole-frame brightness that counts as a scene cut
@@ -69,7 +70,7 @@ def zone_target(rgb, value: float, brightness: float):
     """Hue and saturation from rgb, level from the region's brightness (with a floor), times brightness (0..1)."""
     mx = max(rgb)
     norm = (1.0, 1.0, 1.0) if mx <= 0 else tuple(c / mx for c in rgb)
-    level = (MIN_LEVEL + (1.0 - MIN_LEVEL) * max(0.0, min(1.0, value))) * brightness
+    level = (MIN_LEVEL + (1.0 - MIN_LEVEL) * max(0.0, min(1.0, value)) ** LIFT) * brightness
     return tuple(c * level for c in norm)
 
 
@@ -77,20 +78,22 @@ def zone_target(rgb, value: float, brightness: float):
 class Analysis:
     targets: list
     frame_level: float
+    values: list  # each zone's brightness (HSV value, 0..1), zone order
 
 
 def analyse(frame, width: int, height: int, stride: int, layout: str, boost_value: float, brightness: float,
             order: str = "bgrx") -> Analysis:
     cache: dict = {}
-    targets = []
+    targets, zone_values = [], []
     factor = boost_factor(boost_value)
     for rect in regions(width, height, layout):
         if rect not in cache:
             cache[rect] = region_colour(frame, stride, rect, order=order)
         rgb, value = cache[rect]
         targets.append(zone_target(boost(rgb, factor), value, brightness / 100.0))
+        zone_values.append(value)
     values = [value for _rgb, value in cache.values()]
-    return Analysis(targets, sum(values) / len(values))
+    return Analysis(targets, sum(values) / len(values), zone_values)
 
 
 def to_led(target) -> tuple[int, int, int]:
@@ -99,6 +102,20 @@ def to_led(target) -> tuple[int, int, int]:
 
 def is_cut(previous: float | None, current: float) -> bool:
     return previous is not None and abs(current - previous) > CUT_THRESHOLD
+
+
+class DarkGate:
+    """Which zones are dark, with a gap between the off and on thresholds so a wobbling scene doesn't blink."""
+
+    def __init__(self) -> None:
+        self._dark = [False] * 4
+
+    def reset(self) -> None:
+        self._dark = [False] * 4
+
+    def update(self, values) -> list:
+        self._dark = [value <= DARK_ON if dark else value < DARK_OFF for dark, value in zip(self._dark, values)]
+        return self._dark
 
 
 class Smoother:

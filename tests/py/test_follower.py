@@ -47,9 +47,11 @@ def expected_leds(settings):
 
 
 def test_clean_settings_fills_defaults_and_clamps():
-    assert clean_settings({}) == {"layout": "corners", "brightness": 70, "boost": 58, "speed": "balanced"}
+    assert clean_settings({}) == {"layout": "corners", "brightness": 70, "boost": 58, "speed": "balanced", "dark": "glow"}
     assert clean_settings({"layout": "sides", "brightness": 500, "boost": -3, "speed": "fast"}) == \
-        {"layout": "sides", "brightness": 100, "boost": 0, "speed": "fast"}
+        {"layout": "sides", "brightness": 100, "boost": 0, "speed": "fast", "dark": "glow"}
+    assert clean_settings({"dark": "off"})["dark"] == "off"
+    assert clean_settings({"dark": "x"})["dark"] == "glow"
     assert clean_settings({"layout": "x", "speed": "y", "brightness": "a"})["layout"] == "corners"
 
 
@@ -137,3 +139,100 @@ def test_frames_after_stop_are_dropped():
     f.stop()
     cap.on_frame(FRAME, 16, 8, 64)
     assert lights.shown == []
+
+
+DARK_FRAME = quad_frame(16, 8, [(0, 0, 0), (255, 0, 0), (0, 255, 0), (0, 0, 255)])
+
+
+def test_dark_scenes_off_blacks_out_only_the_dark_zone():
+    for dark, expect_off in (("off", True), ("glow", False)):
+        f, lights, _, _ = make()
+        f.update({"dark": dark})
+        f.start()
+        cap = FakeCapture.instances[0]
+        cap.on_state("streaming")
+        cap.on_frame(DARK_FRAME, 16, 8, 64)
+        leds = lights.shown[-1]
+        assert (sum(leds[0]) == 0) == expect_off
+        assert all(sum(z) > 0 for z in leds[1:])
+
+
+def test_a_write_that_did_not_happen_is_tried_again():
+    f, lights, _, clock = make()
+    lights.show = lambda zones: False
+    f.start()
+    cap = FakeCapture.instances[0]
+    cap.on_state("streaming")
+    cap.on_frame(FRAME, 16, 8, 64)
+    assert f._last_leds is None
+
+
+def test_streaming_reported_during_start_is_kept():
+    class EagerCapture(FakeCapture):
+        def start(self):
+            self.on_state("streaming")
+            return True
+
+    FakeCapture.instances, events = [], []
+    f = Follower(lambda fr, st, hz: EagerCapture(fr, st, hz), FakeLights(), lambda *a: events.append(a),
+                 clock=lambda: 0.0)
+    f.start()
+    assert f._state == "following" and events == [("follow_state", "following")]
+
+
+def test_retries_stay_five_seconds_apart():
+    f, _, _, clock = make(ok=False)
+    f.start()
+    clock["t"] = 5.4
+    f.tick()
+    clock["t"] = 10.1
+    f.tick()
+    assert len(FakeCapture.instances) == 3
+
+
+def test_a_stream_that_never_starts_is_retried():
+    f, _, events, clock = make()
+    f.start()
+    clock["t"] = 9.9
+    f.tick()
+    assert not FakeCapture.instances[0].stopped
+    clock["t"] = 10.1
+    f.tick()
+    assert FakeCapture.instances[0].stopped and events[-1] == ("follow_state", "waiting")
+
+
+def test_a_tick_during_a_slow_start_does_not_time_out():
+    holder, clock = {}, {"t": 20.0}
+
+    class SlowStart(FakeCapture):
+        def start(self):
+            holder["f"].tick()  # the worker ticks while pw-dump is still running
+            return super().start()
+
+    FakeCapture.instances, events = [], []
+    f = Follower(lambda fr, st, hz: SlowStart(fr, st, hz), FakeLights(), lambda *a: events.append(a),
+                 clock=lambda: clock["t"])
+    holder["f"] = f
+    f.start()
+    assert events == [] and not FakeCapture.instances[0].stopped
+
+
+def test_a_reconnect_never_leaves_the_old_capture_running():
+    holder, clock = {}, {"t": 0.0}
+
+    class LostDuringStart(FakeCapture):
+        def start(self):
+            if len(FakeCapture.instances) == 1:
+                self.on_state("error")
+                holder["f"].tick()
+            return super().start()
+
+    FakeCapture.instances = []
+    f = Follower(lambda fr, st, hz: LostDuringStart(fr, st, hz), FakeLights(), lambda *a: None,
+                 clock=lambda: clock["t"])
+    holder["f"] = f
+    f.start()
+    clock["t"] = 5.1
+    f.tick()
+    assert len(FakeCapture.instances) == 2 and FakeCapture.instances[0].stopped
+
