@@ -3,7 +3,7 @@
 A [Decky Loader](https://decky.xyz) plugin that turns the ROG Xbox Ally's stick lights into an Ambilight: while
 you play, each half of each ring takes the colour of its corner of the screen.
 
-![How Ambideck turns a frame into ring colours](docs/images/ambideck-demo.gif)
+https://github.com/user-attachments/assets/d378b852-994a-4eab-8c60-6a79b5997024
 
 ## What it does
 
@@ -44,7 +44,9 @@ release's SHA-256 and keeps your settings. **Check for updates** asks right away
 
 ## How it works
 
-The animation above is a real capture from the device, run through Ambideck's own colour code:
+![How Ambideck turns a frame into ring colours](docs/images/how-it-works.png)
+
+This is a real frame from the device, run through Ambideck's own colour code:
 
 1. gamescope (Steam's compositor) shrinks every frame to 128×72 on the GPU and hands it over through PipeWire.
 2. The frame is split into four corners, one per half ring, and every 4th pixel of each corner is read.
@@ -73,7 +75,7 @@ scripts/package.sh   # builds out/ambideck.zip
 ```
 
 `scripts/serve.sh` serves the zip on your network for **Install plugin from URL**.
-`scripts/demo-capture.py` and `scripts/demo-render.py` make the animation above.
+`scripts/demo-capture.py` and `scripts/demo-render.py` make the picture in How it works (and a video of it).
 [docs/device-checklist.md](docs/device-checklist.md) lists what to check on the device.
 Releases are tagged `vX.Y.Z` and carry the package as `ambideck.zip`; the updater relies on both.
 
