@@ -7,7 +7,7 @@ import subprocess
 import sys
 import tempfile
 
-from PIL import Image, ImageDraw, ImageFont
+from PIL import Image, ImageChops, ImageDraw, ImageFilter, ImageFont
 
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 sys.path.insert(0, os.path.join(ROOT, "py_modules"))
@@ -40,8 +40,31 @@ def read_frames(path):
     return frames
 
 
-def seen(led):  # how an LED value looks to the eye (undo the gamma the controller needs)
-    return tuple(int(255 * (c / 255) ** (1 / 2.2)) for c in led)
+def seen(led):
+    """How a lit LED looks: its colour at full strength, dimmed by how bright it really is. An LED is a light source,
+    so a flat swatch of its gamma-corrected value looks far duller than the ring does; the Brightness setting is
+    already in the LED value, so dimming is relative to it."""
+    perceived = [(c / 255) ** (1 / 2.2) for c in led]  # undo the gamma the controller needs
+    peak = max(perceived)
+    if peak <= 0:
+        return (0, 0, 0)
+    strength = min(1.0, (peak / (SETTINGS["brightness"] / 100)) ** 0.6)
+    return tuple(int(255 * c / peak * strength) for c in perceived)
+
+
+def draw_ring(img, cx, cy, r, top, bottom):
+    """A stick ring: top and bottom halves in their LED colours, with a soft glow around them."""
+    halo = Image.new("RGB", img.size, (0, 0, 0))
+    hd = ImageDraw.Draw(halo)
+    hd.pieslice([cx - r - 10, cy - r - 10, cx + r + 10, cy + r + 10], 180, 360, fill=seen(top))
+    hd.pieslice([cx - r - 10, cy - r - 10, cx + r + 10, cy + r + 10], 0, 180, fill=seen(bottom))
+    hd.ellipse([cx - r + 30, cy - r + 30, cx + r - 30, cy + r - 30], fill=(0, 0, 0))
+    img.paste(ImageChops.add(img, halo.filter(ImageFilter.GaussianBlur(14))))
+    d = ImageDraw.Draw(img)
+    d.pieslice([cx - r, cy - r, cx + r, cy + r], 180, 360, fill=seen(top))
+    d.pieslice([cx - r, cy - r, cx + r, cy + r], 0, 180, fill=seen(bottom))
+    d.ellipse([cx - r + 18, cy - r + 18, cx + r - 18, cy + r - 18], fill=(30, 30, 34))
+    d.ellipse([cx - 34, cy - 34, cx + 34, cy + 34], fill=(55, 55, 60))
 
 
 def plain_mean(frame, stride, rect):
@@ -95,10 +118,8 @@ def render(frames, outdir):
         d.text((px, 20), "Stick rings", fill=(230, 230, 230), font=BIG)
         for cx, (top, bottom), label in ((px + 100, (leds[1], leds[0]), "Left stick"), (px + 310, (leds[2], leds[3]), "Right stick")):
             cy, r = 250, 85
-            d.pieslice([cx - r, cy - r, cx + r, cy + r], 180, 360, fill=seen(top))
-            d.pieslice([cx - r, cy - r, cx + r, cy + r], 0, 180, fill=seen(bottom))
-            d.ellipse([cx - r + 18, cy - r + 18, cx + r - 18, cy + r - 18], fill=(30, 30, 34))
-            d.ellipse([cx - 34, cy - 34, cx + 34, cy + 34], fill=(55, 55, 60))
+            draw_ring(img, cx, cy, r, top, bottom)
+            d = ImageDraw.Draw(img)
             d.text((cx - 44, cy + r + 14), label, fill=(220, 220, 220), font=FONT)
         lines = [f"t = {t:4.1f} s", "scene cut: colours jump" if cut else "colours fade (Balanced)",
                  "brightness 70 · boost 58", "", "Sent to the controller:"]
