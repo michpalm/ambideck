@@ -98,6 +98,13 @@ Releases are tagged `vX.Y.Z` and carry the package as `ambideck.zip`; the update
 A personal project, maintained on a best-effort basis. The code was written with [Claude](https://claude.ai)
 (Anthropic's AI), directed, reviewed and tested on device by the author.
 
+## Support
+
+Ambideck is free. If you'd like to support its development, you can do so on Ko-fi. It's entirely optional: bug
+reports and ideas are just as welcome.
+
+[![Support Ambideck on Ko-fi](https://ko-fi.com/img/githubbutton_sm.svg)](https://ko-fi.com/michpalm)
+
 ## Credits
 
 - ROG Ally light protocol as documented by [HHD](https://github.com/hhd-dev/hhd) and the Linux `hid-asus-ally`
