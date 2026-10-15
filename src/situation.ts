@@ -7,7 +7,8 @@ export interface SituationDeps {
     onResume(cb: () => void): (() => void) | null;
     onCharger(cb: (onCharger: boolean) => void): () => void;
     onDocked(cb: (docked: boolean) => void): () => void;
-    initialStatus(): Promise<{ docked: boolean; onCharger: boolean }>;
+    onCapture(cb: (capturing: boolean) => void): () => void;
+    initialStatus(): Promise<{ docked: boolean; onCharger: boolean; capturing: boolean }>;
     every(fn: () => void, ms: number): () => void;
 }
 
@@ -62,6 +63,7 @@ export function createSituation(deps: SituationDeps) {
                 () => sleepAndWake(),
                 () => deps.onCharger((onCharger) => set({ onCharger })),
                 () => deps.onDocked((docked) => set({ docked })),
+                () => deps.onCapture((capturing) => set({ capturing })),
             ];
             stops = [];
             for (const source of sources) {
@@ -71,7 +73,7 @@ export function createSituation(deps: SituationDeps) {
                     console.warn('[ambideck] a situation source is unavailable', error);
                 }
             }
-            deps.initialStatus().then(({ docked, onCharger }) => set({ docked, onCharger }), () => {});
+            deps.initialStatus().then(({ docked, onCharger, capturing }) => set({ docked, onCharger, capturing }), () => {});
         },
         stop(): void {
             stops.forEach((stop) => stop());

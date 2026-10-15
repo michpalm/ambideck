@@ -5,6 +5,7 @@ export interface Status {
     supported: boolean;
     docked: boolean;
     onCharger: boolean;
+    capturing: boolean;
 }
 
 export const backend = {

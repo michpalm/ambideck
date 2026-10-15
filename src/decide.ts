@@ -5,9 +5,10 @@ export interface Situation {
     suspended: boolean;
     docked: boolean;
     onCharger: boolean;
+    capturing: boolean; // a screen recorder holds the capture lock
 }
 
-export const IDLE_SITUATION: Situation = { appId: null, suspended: false, docked: false, onCharger: false };
+export const IDLE_SITUATION: Situation = { appId: null, suspended: false, docked: false, onCharger: false, capturing: false };
 
 export type Decision =
     | { kind: 'follow' }
@@ -17,6 +18,7 @@ export type Decision =
 
 export function decide(situation: Situation, s: Settings): Decision {
     if (situation.suspended) return { kind: 'pause' };
+    if (situation.capturing) return { kind: 'handBack' };
     if (!s.enabled) return { kind: 'handBack' };
     if (situation.docked && !s.runDocked) return { kind: 'handBack' };
     if (situation.appId !== null) return isOnForGame(s, situation.appId) ? { kind: 'follow' } : { kind: 'handBack' };

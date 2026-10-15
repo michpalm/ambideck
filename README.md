@@ -19,6 +19,9 @@ https://github.com/user-attachments/assets/d378b852-994a-4eab-8c60-6a79b5997024
 - **Docked:** off by default; one switch to keep it on.
 - **Light on resources:** gamescope hands over a tiny 128×72 frame; about 7 % of one CPU core in total.
 - **Updates itself:** tells you when a new release is out and installs it through Decky.
+- **Makes way for screen recorders:** while a recorder such as [Showreel](https://github.com/michpalm/showreel)
+  holds the capture lock, Ambideck lets go of gamescope's screen stream and hands the lights back
+  (see [Screen recorders](#screen-recorders)).
 
 ## Install
 
@@ -59,9 +62,20 @@ This is a real frame from the device, run through Ambideck's own colour code:
 When Ambideck takes over, it asks HueSync to step aside; when it stops, it asks HueSync to re-apply your setting
 for the current game and power state. Both go through HueSync's own backend, and no HueSync code is copied.
 
+## Screen recorders
+
+gamescope has a single screen stream, and the first app reading it sets its size for every reader. Ambideck asks
+for a tiny frame, so a recorder that joins later would record at 128×72. Disconnecting a full-size reader while a game
+is drawing can also crash gamescope on SteamOS 3.8.
+
+So recorders can ask Ambideck to step aside: write `/run/decky-screen-capture.lock` as root, containing
+`{"pid": <recorder pid>, "owner": "<name>"}`. Ambideck checks it every 0.5 s, and again right before every connection,
+and stays off the stream while the lock exists and that process is alive (zombies count as dead). Remove the lock only
+after your recorder has disconnected from gamescope. [Showreel](https://github.com/michpalm/showreel) does this.
+
 ## Compatibility
 
-Tested on a ROG Xbox Ally (RC73YA) running Bazzite, handheld and docked to a TV. The original Ally and Ally X use
+Tested on a ROG Xbox Ally (RC73YA) running Bazzite and SteamOS 3.8, handheld and docked to a TV. The original Ally and Ally X use
 the same driver and should work, but their zone order is untested. Other handhelds are not supported: the panel
 says so and Ambideck does nothing.
 

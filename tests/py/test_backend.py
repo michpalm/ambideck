@@ -32,17 +32,17 @@ class FakeCapture:
         self.stopped = True
 
 
-def make(lights=None, huesync=True, capture_ok=True):
+def make(lights=None, huesync=True, capture_ok=True, **kwargs):
     events = []
     backend = Backend(find_lights=lambda: lights, docked=lambda: False, charger=lambda: True, emit=lambda *a: events.append(a),
                       make_capture=lambda f, s, hz: FakeCapture(f, s, hz, capture_ok),
-                      huesync_installed=lambda: huesync)
+                      huesync_installed=lambda: huesync, **kwargs)
     return backend, events
 
 
 def test_status_reports_support_and_docked():
-    assert make(FakeLights())[0].status() == {"supported": True, "docked": False, "onCharger": True}
-    assert make(None)[0].status() == {"supported": False, "docked": False, "onCharger": True}
+    assert make(FakeLights())[0].status() == {"supported": True, "docked": False, "onCharger": True, "capturing": False}
+    assert make(None)[0].status() == {"supported": False, "docked": False, "onCharger": True, "capturing": False}
 
 
 def test_show_rainbow_off_reach_the_controller():
@@ -189,3 +189,68 @@ def test_shutdown_joins_the_worker():
     backend.start_worker()
     backend.shutdown()
     assert not backend._worker.is_alive()
+
+
+def locked_backend(capture_cls, locked):
+    clock = {"t": 0.0}
+    caps, events = [], []
+    backend = Backend(find_lights=FakeLights, docked=lambda: False, charger=lambda: False,
+                      emit=lambda *a: events.append(a),
+                      make_capture=lambda f, s, hz: caps.append(capture_cls(f, s, hz)) or caps[-1],
+                      huesync_installed=lambda: True, clock=lambda: clock["t"],
+                      capture_locked=lambda: locked["on"])
+    return backend, clock, caps, events
+
+
+def test_lock_stops_following_and_emits():
+    locked = {"on": False}
+    backend, clock, caps, events = locked_backend(FollowCapture, locked)
+    assert backend.follow({}) is True
+    locked["on"] = True
+    clock["t"] = 0.6
+    backend.tick()
+    assert caps[0].stopped
+    assert ("capture_lock", True) in events
+    assert backend.status()["capturing"] is True
+
+
+def test_follow_refused_while_locked():
+    backend, _clock, caps, _events = locked_backend(FollowCapture, {"on": True})
+    assert backend.follow({}) is False
+    assert caps == []
+
+
+def test_lock_stops_a_retrying_follower():
+    locked = {"on": False}
+    backend, clock, caps, _events = locked_backend(FailingCapture, locked)
+    backend.follow({})
+    backend.rainbow(keep_following=True)
+    locked["on"] = True
+    clock["t"] = 0.6
+    backend.tick()
+    made = len(caps)
+    for t in (6.0, 12.0, 20.0):
+        clock["t"] = t
+        backend.tick()
+    assert len(caps) == made
+
+
+def test_unlock_emits_and_follow_works_again():
+    locked = {"on": True}
+    backend, clock, caps, events = locked_backend(FollowCapture, locked)
+    locked["on"] = False
+    clock["t"] = 0.6
+    backend.tick()
+    assert ("capture_lock", False) in events
+    assert backend.follow({}) is True and len(caps) == 1
+
+
+def test_follow_reads_the_lock_fresh_between_polls():
+    locked = {"on": False}
+    backend, clock, caps, _events = locked_backend(FollowCapture, locked)
+    clock["t"] = 0.6
+    backend.tick()  # watcher saw no lock
+    locked["on"] = True  # the recorder locks before the next poll
+    clock["t"] = 0.9
+    assert backend.follow({}) is False
+    assert caps == []

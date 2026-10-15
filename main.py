@@ -4,7 +4,8 @@ import os
 import decky
 
 from ambideck.backend import Backend
-from ambideck.capture import GamescopeCapture, session_env
+from ambideck.capture import GamescopeCapture, live_video_serial, session_env
+from ambideck.capture_lock import capture_locked, serial_unless_locked
 from ambideck.display import charger_connected, external_display_connected
 from ambideck.kv import KvStore
 from ambideck.lights import Lights, find_hidraw
@@ -33,8 +34,11 @@ class Plugin:
             docked=external_display_connected,
             charger=charger_connected,
             emit=emit,
-            make_capture=lambda on_frame, on_state, hz: GamescopeCapture(on_frame, on_state, max_hz=hz),
+            # The lock is checked again right before each connect: never join a recorder's stream.
+            make_capture=lambda on_frame, on_state, hz: GamescopeCapture(
+                on_frame, on_state, max_hz=hz, find_serial=serial_unless_locked(live_video_serial)),
             huesync_installed=lambda: os.path.isdir(HUESYNC_DIR),
+            capture_locked=capture_locked,
         )
         self.backend.start_worker()
         decky.logger.info(f"{LOG} backend started")

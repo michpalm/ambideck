@@ -26,4 +26,13 @@ describe('decide', () => {
         expect(decide(sit({ docked: true }), set({ outside: 'follow' }))).toEqual({ kind: 'handBack' });
         expect(decide(sit({ docked: true }), set({ outside: 'follow', runDocked: true }))).toEqual({ kind: 'follow' });
     });
+    it('hands back while the screen is being recorded', () => {
+        expect(decide(sit({ appId: '1', capturing: true }), set({}))).toEqual({ kind: 'handBack' });
+        expect(decide(sit({ capturing: true }), set({ outside: 'follow' }))).toEqual({ kind: 'handBack' });
+        expect(decide(sit({ capturing: true }), set({ outside: 'off' }))).toEqual({ kind: 'handBack' });
+        expect(decide(sit({ appId: '1', capturing: true }), set({ enabled: false }))).toEqual({ kind: 'handBack' });
+    });
+    it('still pauses while asleep during a recording', () => {
+        expect(decide(sit({ appId: '1', suspended: true, capturing: true }), set({}))).toEqual({ kind: 'pause' });
+    });
 });

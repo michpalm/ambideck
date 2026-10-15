@@ -27,5 +27,9 @@ Run after installing a new build (Decky → Developer → Install plugin from UR
 | 21 | Dark scenes = Off in a dark game (Rain World) | Black corners switch their half off and fade back in; no blinking at the edge |
 | 22 | Settings saved by 1.0 with Outside games = Artwork | Shows Follow after the update |
 | 23 | Unplug/replug the controller or reload `hid-asus-ally` mid-game | One "lost the light controller" log line; lights back within ~2 s |
-| 24 | Check for updates | "Up to date (1.1.0)" |
+| 24 | Check for updates | "Up to date (<current version>)" |
 | 25 | Decky's installer with a local zip (CEF `utilities/install_plugin`, type 2) | Decky's confirm and progress; Ambideck reinstalls with settings kept |
+| 26 | Capture lock (`/run/decky-screen-capture.lock`, live PID) while following | Within ~1 s: panel shows "Paused while Showreel records", lights hand back to HueSync, `pw-dump` has no `ambideck` node |
+| 27 | Remove the lock | Following resumes within ~1 s; `pw-dump` shows the gamescope format at 128×72 |
+| 28 | Lock with a dead PID (`999999`) | Ignored; Ambideck keeps following |
+| 29 | Rows 26–27 | No "out of buffers" in `journalctl --user -u gamescope-session` |

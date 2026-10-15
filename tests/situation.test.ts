@@ -11,7 +11,8 @@ function fakeDeps() {
         onResume: (cb) => ((cbs.resume = cb), () => {}),
         onCharger: (cb) => ((cbs.charger = cb as (v?: unknown) => void), () => {}),
         onDocked: (cb) => ((cbs.docked = cb as (v?: unknown) => void), () => {}),
-        initialStatus: async () => ({ docked: true, onCharger: false }),
+        onCapture: (cb) => ((cbs.capture = cb as (v?: unknown) => void), () => {}),
+        initialStatus: async () => ({ docked: true, onCharger: false, capturing: false }),
         every: (fn) => ((tick = fn), () => {}),
     };
     return { deps, cbs, state, tick: () => tick() };
@@ -32,8 +33,24 @@ describe('createSituation', () => {
         cbs.suspend();
         cbs.resume();
         cbs.charger(true);
-        expect(s.get()).toEqual({ appId: '730', suspended: false, docked: true, onCharger: true });
+        expect(s.get()).toEqual({ appId: '730', suspended: false, docked: true, onCharger: true, capturing: false });
         expect(calls).toBe(5);
+    });
+});
+
+describe('the capture lock', () => {
+    it('starts from the backend status and follows the capture_lock event', async () => {
+        const { deps, cbs } = fakeDeps();
+        const s = createSituation({ ...deps, initialStatus: async () => ({ docked: false, onCharger: false, capturing: true }) });
+        let calls = 0;
+        s.subscribe(() => calls++);
+        s.start();
+        await Promise.resolve();
+        expect(s.get().capturing).toBe(true);
+        calls = 0;
+        cbs.capture(false);
+        expect(s.get().capturing).toBe(false);
+        expect(calls).toBe(1);
     });
 });
 

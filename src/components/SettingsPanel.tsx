@@ -5,7 +5,7 @@ import { boostLabel, DARK_OPTIONS, LAYOUT_OPTIONS, OUTSIDE_OPTIONS, SPEED_OPTION
 
 export function SettingsPanel() {
     const s = useSettings();
-    const { appId } = useSituation();
+    const { appId, capturing } = useSituation();
     const supported = useSupported();
 
     if (supported === false) {
@@ -18,6 +18,9 @@ export function SettingsPanel() {
 
     return (
         <PanelSection>
+            {capturing && (
+                <PanelSectionRow><div>Paused while Showreel records</div></PanelSectionRow>
+            )}
             <PanelSectionRow>
                 <ToggleField label="Ambideck" checked={s.enabled} onChange={(enabled) => settings.update({ enabled })} />
             </PanelSectionRow>

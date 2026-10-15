@@ -24,7 +24,8 @@ def _zones(raw) -> list[tuple[int, int, int]]:
 class Backend:
     def __init__(self, find_lights: Callable, docked: Callable[[], bool], charger: Callable[[], bool], emit: Callable,
                  make_capture: Callable,
-                 huesync_installed: Callable[[], bool], clock: Callable[[], float] = time.monotonic) -> None:
+                 huesync_installed: Callable[[], bool], clock: Callable[[], float] = time.monotonic,
+                 capture_locked: Callable[[], bool] = lambda: False) -> None:
         self._find_lights = find_lights
         self._lights = None
         self._looked = False
@@ -33,6 +34,9 @@ class Backend:
         self._huesync_installed = huesync_installed
         self._dock = DockWatcher(docked, emit)
         self._charger = DockWatcher(charger, emit, event="charger_changed")
+        # A recorder needs gamescope's stream to itself: never follow while it holds the capture lock.
+        self._capture_locked = capture_locked
+        self._capture = DockWatcher(capture_locked, emit, clock=clock, interval=0.5, event="capture_lock")
         self._owns_lights = False
         self._clock = clock
         self._static: tuple | None = None  # ("show", zones) or ("off",), re-sent like the follower does
@@ -74,6 +78,9 @@ class Backend:
 
     def follow(self, settings) -> bool:
         with self._lock:
+            if self._capture.current or self._capture_locked():  # the watcher's view can be 0.5 s old
+                self._stop_following()
+                return False
             lights = self._get_lights()
             if lights is None:
                 return False
@@ -89,7 +96,7 @@ class Backend:
         with self._lock:
             supported = self._get_lights() is not None
         return {"supported": supported, "docked": self._dock.current,
-                "onCharger": self._charger.current}
+                "onCharger": self._charger.current, "capturing": self._capture.current}
 
     def show(self, zones) -> None:
         with self._lock:
@@ -130,6 +137,10 @@ class Backend:
             self._owns_lights = False
 
     def tick(self) -> None:
+        self._capture.tick()
+        if self._capture.current:
+            with self._lock:
+                self._stop_following()
         self._dock.tick()
         self._charger.tick()
         self._resend_static()

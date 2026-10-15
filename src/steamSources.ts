@@ -46,9 +46,10 @@ export function steamSituationDeps(): SituationDeps {
         // Steam's battery event throws on some builds; the backend reads the charger from the system instead.
         onCharger: (cb) => backendEvent('charger_changed', cb),
         onDocked: (cb) => backendEvent('docked_changed', cb),
+        onCapture: (cb) => backendEvent('capture_lock', cb),
         initialStatus: async () => {
-            const { docked, onCharger } = await backend.getStatus();
-            return { docked, onCharger };
+            const { docked, onCharger, capturing } = await backend.getStatus();
+            return { docked, onCharger, capturing };
         },
         every: (fn, ms) => {
             const id = setInterval(fn, ms);
