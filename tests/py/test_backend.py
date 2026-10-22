@@ -254,3 +254,86 @@ def test_follow_reads_the_lock_fresh_between_polls():
     clock["t"] = 0.9
     assert backend.follow({}) is False
     assert caps == []
+
+class ManagedLights(FakeLights):
+    def __init__(self):
+        super().__init__()
+        self.available = False
+        self.closed = False
+    def status(self):
+        return {'supported': self.available, 'deviceName': 'Claw' if self.available else None,
+                'hueSync': False, 'unavailableReason': None if self.available else 'Disconnected'}
+    def begin_follow(self): self.calls.append(('begin',))
+    def fallback(self, keep_following=False): self.calls.append(('fallback', keep_following)); return True
+    def pause(self): self.calls.append(('pause',))
+    def close(self): self.closed = True
+
+def test_status_tracks_managed_device_and_emits_only_changes():
+    lights = ManagedLights()
+    backend, events = make(lights)
+    assert backend.status()['supported'] is False
+    assert backend.follow({}) is False
+    backend.tick(); events.clear()
+    lights.available = True; backend.tick(); backend.tick()
+    changes = [e for e in events if e[0] == 'lights_status']
+    assert len(changes) == 1 and changes[0][1]['deviceName'] == 'Claw'
+    assert backend.status()['supported'] is True
+
+def test_non_ally_shutdown_falls_back_even_with_huesync_installed_and_closes():
+    lights = ManagedLights(); lights.available = True
+    backend, _ = make(lights, huesync=True)
+    backend.show([[1, 2, 3]] * 4)
+    backend.shutdown()
+    assert ('fallback', False) in lights.calls and lights.closed
+
+def test_temporary_fallback_keeps_capture_retrying():
+    lights = ManagedLights(); lights.available = True
+    backend, _ = make(lights, capture_ok=False)
+    backend.follow({})
+    backend.fallback(True)
+    assert backend._follower.active
+    assert lights.calls[-1] == ('fallback', True)
+
+def test_stop_cancels_the_output_writer_before_huesync_handback():
+    lights = ManagedLights(); lights.available = True
+    backend, _ = make(lights)
+    backend.show([[1, 2, 3]] * 4)
+    backend.stop()
+    assert lights.calls[-1] == ('pause',)
+
+def test_delayed_waiting_fallback_cannot_disable_a_resumed_stream():
+    from ambideck.rgb.output import OutputWorker
+    from ambideck.rgb.factory import Detection
+    from test_rgb_output import Device, eventually
+    device = Device()
+    output = OutputWorker(lambda: Detection(device)); output.start()
+    try:
+        eventually(lambda: output.status()['supported'])
+        backend, _ = make(output, capture_ok=False)
+        backend.follow({})
+        backend._follower.on_state('streaming')
+        backend.fallback(keep_following=True)  # delayed RPC from the previous waiting event
+        assert output.show(((10, 20, 30),) * 4)
+        eventually(lambda: ('show', ((10, 20, 30),) * 4) in device.sent)
+    finally:
+        output.close()
+
+def test_recorder_ticks_preserve_fallback_while_controller_settles():
+    from ambideck.rgb.output import OutputWorker
+    from ambideck.rgb.factory import Detection
+    from test_rgb_output import Device, eventually
+    device, clock = Device(), [0.0]
+    device.ready_at = 2.0
+    output = OutputWorker(lambda: Detection(device), clock=lambda: clock[0]); output.start()
+    backend, _ = make(output, capture_locked=lambda: True, clock=lambda: clock[0])
+    try:
+        eventually(lambda: output.status()['supported'])
+        backend.fallback()
+        for t in (0.6, 1.2, 1.8):
+            clock[0] = t; backend.tick()
+        assert device.sent == []
+        clock[0] = 2.1; backend.tick()
+        eventually(lambda: bool(device.sent))
+        assert device.sent == [('show', ((64, 64, 64),) * 4)]
+    finally:
+        backend.shutdown()

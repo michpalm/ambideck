@@ -40,6 +40,23 @@ def make(ok=True):
 
 FRAME = quad_frame(16, 8, [(0, 0, 255), (255, 0, 0), (0, 255, 0), (255, 255, 0)])
 
+def test_waiting_pauses_periodic_rgb_before_huesync_can_restore():
+    order, clock = [], [0.0]
+    class ManagedLights(FakeLights):
+        def pause(self): order.append('pause')
+        def begin_follow(self): order.append('begin')
+    lights = ManagedLights()
+    f = Follower(lambda fr, st, hz: FakeCapture(fr, st, hz), lights,
+                 lambda event, state: order.append(state), clock=lambda: clock[0])
+    f.start()
+    first = FakeCapture.instances[-1]
+    first.on_state('streaming'); first.on_state('error'); f.tick()
+    assert order[-2:] == ['pause', 'waiting']
+    assert f.active
+    clock[0] = 5.1; f.tick()
+    FakeCapture.instances[-1].on_state('streaming')
+    assert order[-2:] == ['begin', 'following']
+
 
 def expected_leds(settings):
     a = analyse(FRAME, 16, 8, 64, settings["layout"], settings["boost"], settings["brightness"])

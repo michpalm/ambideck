@@ -1,18 +1,19 @@
 # Ambideck
 
-A [Decky Loader](https://decky.xyz) plugin that turns the ROG Xbox Ally's stick lights into an Ambilight: while
-you play, each half of each ring takes the colour of its corner of the screen.
+A [Decky Loader](https://decky.xyz) plugin that turns compatible handheld-PC lights into an Ambilight.
+While you play, the lights follow the screen using four zones, left/right colours or one shared colour,
+depending on the device. The video below shows the ROG Xbox Ally.
 
 https://github.com/user-attachments/assets/d378b852-994a-4eab-8c60-6a79b5997024
 
 ## What it does
 
-- **Follows the screen** in any game: four corners (top and bottom half of each ring), or one colour per side.
+- **Follows the screen** in any game: four corners or two screen sides, combined to fit the device's RGB zones.
 - **Keeps colours alive:** colourful pixels count more than grey ones, and dim scenes are lifted, so pastel and
   dark scenes keep their tint.
 - **Dark scenes:** a near-black corner leaves a faint glow, or switches its half of the ring off.
 - **Hands the lights back** when you stop playing: to [HueSync](https://github.com/honjow/HueSync)'s setting if
-  you use it, otherwise to the controller's rainbow.
+  you use it on Ally, otherwise to the controller's native rainbow or a single static colour.
 - **Per game:** switch it off for games where it distracts.
 - **Outside games:** off, your normal lights, or follow the screen just like in a game. Following outside games
   keeps the capture running whenever Game Mode is up: about 7 % of one CPU core and roughly 0.2 W.
@@ -56,11 +57,13 @@ This is a real frame from the device, run through Ambideck's own colour code:
 3. Colourful pixels are weighted more than grey ones, then the colour boost raises the saturation.
 4. The ring's brightness follows the corner's brightness on a curve that lifts dim scenes, with a small minimum
    glow (or off, with Dark scenes = Off).
-5. Colours fade smoothly between frames and jump on scene cuts, then go to the controller with the same HID
-   message the kernel driver uses.
+5. Colours fade smoothly between frames and jump on scene cuts. A device-specific backend combines samples
+   to fit the available zones and sends them through HID, serial or the kernel's multicolour LED interface.
 
-When Ambideck takes over, it asks HueSync to step aside; when it stops, it asks HueSync to re-apply your setting
+On Ally, when Ambideck takes over, it asks HueSync to step aside; when it stops, it asks HueSync to re-apply your setting
 for the current game and power state. Both go through HueSync's own backend, and no HueSync code is copied.
+Other devices use their native rainbow where documented, or one static colour averaged from the last screen
+colours (soft white before the first frame). The Off setting still turns the lights off.
 
 ## Screen recorders
 
@@ -75,9 +78,23 @@ after your recorder has disconnected from gamescope. [Showreel](https://github.c
 
 ## Compatibility
 
-Tested on a ROG Xbox Ally (RC73YA) running Bazzite and SteamOS 3.8, handheld and docked to a TV. The original Ally and Ally X use
-the same driver and should work, but their zone order is untested. Other handhelds are not supported: the panel
-says so and Ambideck does nothing.
+Earlier releases were tested on a ROG Xbox Ally (RC73YA) running Bazzite and SteamOS 3.8, handheld and docked
+to a TV. This change adds the following protocol implementations; **the new backends and output worker
+still need hardware validation**.
+
+| Device family | Lighting |
+| --- | --- |
+| ROG Ally family | Existing four-zone HID protocol; original Ally/Ally X zone order remains untested |
+| Legion Go / Go 2 | Left and right ring colours |
+| Legion Go S | One shared colour |
+| MSI Claw A1M, 7/8 AI+, 8 EX AI+, A8 | One shared colour; USB firmware revision selects the RGB address |
+| AYANEO, AYN Loki, Zotac Zone | One shared colour where a compatible kernel RGB LED interface exists |
+| Selected OneXPlayer / OneXFly / AOKZOE A1X | One shared colour through an explicitly matched HID/USB-serial protocol |
+
+Quick Access shows the detected device and its available zones. Controllers are rediscovered after disconnects.
+Unknown models and ambiguous interfaces receive no RGB commands. See [RGB protocols](docs/rgb-protocols.md)
+for exact model matching and exclusions. HHD and InputPlumber are protocol references, not dependencies.
+Other RGB software can overwrite the lights; Ambideck does not stop or reconfigure controller daemons.
 
 ## Development
 
@@ -109,6 +126,8 @@ reports and ideas are just as welcome.
 
 - ROG Ally light protocol as documented by [HHD](https://github.com/hhd-dev/hhd) and the Linux `hid-asus-ally`
   driver (Luke D. Jones, Denis Benato).
+- Other handheld protocol and device information from [HHD](https://github.com/hhd-dev/hhd) and
+  [InputPlumber](https://github.com/ShadowBlip/InputPlumber); independently implemented here.
 - Works alongside [HueSync](https://github.com/honjow/HueSync) by honjow through its public backend methods.
 - Demo footage: Ori and the Blind Forest: Definitive Edition by Moon Studios / Xbox Game Studios.
 - Not affiliated with ASUS, Microsoft, Valve, Philips or any game shown.

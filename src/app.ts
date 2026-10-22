@@ -1,6 +1,7 @@
 import { addEventListener, removeEventListener } from '@decky/api';
 import { useSyncExternalStore } from 'react';
-import { backend, backendKv } from './backend';
+import { backend, backendKv, LightStatus } from './backend';
+import { createDeviceStatus } from './deviceStatus';
 import { LOG_PREFIX } from './constants';
 import { createController } from './controller';
 import { decide } from './decide';
@@ -14,14 +15,10 @@ import { steamSituationDeps } from './steamSources';
 
 export const situation = createSituation(steamSituationDeps());
 
-let supported: boolean | null = null;
-const supportListeners = new Set<() => void>();
+const deviceStatus = createDeviceStatus(null);
 export const supportStore = {
-    get: () => supported,
-    subscribe(listener: () => void) {
-        supportListeners.add(listener);
-        return () => supportListeners.delete(listener);
-    },
+    get: () => deviceStatus.get()?.supported ?? null,
+    subscribe: deviceStatus.subscribe,
 };
 
 interface DeckyWindow {
@@ -49,11 +46,14 @@ export const updater = createUpdater({
 export const useUpdate = () => useSyncExternalStore(updater.subscribe, updater.get);
 export const useSituation = () => useSyncExternalStore(situation.subscribe, situation.get);
 export const useSupported = () => useSyncExternalStore(supportStore.subscribe, supportStore.get);
+export const useDeviceStatus = () => useSyncExternalStore(deviceStatus.subscribe, deviceStatus.get);
 
 export function startAmbideck() {
     const controller = createController({
         backend,
         hueSync: createHueSync(loaderTransport),
+        canUseHueSync: () => deviceStatus.get()?.hueSync ?? true,
+        canUseDevice: () => deviceStatus.get()?.supported ?? false,
         later: (fn, ms) => {
             const id = setTimeout(fn, ms);
             return () => clearTimeout(id);
@@ -62,6 +62,7 @@ export function startAmbideck() {
     let lastCharger = situation.get().onCharger;
     let running = false;
     let stopped = false;
+    let sawDeviceEvent = false;
     const run = () => {
         if (!running) return;
         const s = settings.get();
@@ -80,15 +81,19 @@ export function startAmbideck() {
         settings.subscribe(run),
     ];
     const onFollowState = addEventListener<[string]>('follow_state', (state) => {
+        if (stopped) return;
         if (state === 'following' || state === 'waiting') void controller.followState(state);
+    });
+    const onLightsStatus = addEventListener<[LightStatus]>('lights_status', (status) => {
+        if (stopped) return;
+        sawDeviceEvent = true;
+        if (deviceStatus.update(status) && running) void controller.refresh();
     });
 
     (async () => {
         const status = await retry(() => backend.getStatus(), 3, 1000);
         if (stopped) return;
-        supported = status.supported;
-        supportListeners.forEach((listener) => listener());
-        if (!status.supported) return;
+        if (!sawDeviceEvent) deviceStatus.update(status);
         await settings.load();
         if (stopped) return;
         situation.start();
@@ -104,6 +109,7 @@ export function startAmbideck() {
             running = false;
             unsubscribe.forEach((u) => u());
             removeEventListener('follow_state', onFollowState);
+            removeEventListener('lights_status', onLightsStatus);
             situation.stop();
             const s = settings.get();
             const sit = situation.get();

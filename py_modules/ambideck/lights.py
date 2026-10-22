@@ -12,6 +12,7 @@ import os
 import threading
 import time
 from typing import Callable, Sequence
+from .rgb.model import DeviceInfo
 
 log = logging.getLogger("ambideck")
 
@@ -68,6 +69,7 @@ def find_hidraw(sys_root: str = "/sys") -> str | None:
 
 
 class Lights:
+    info = DeviceInfo('ROG Ally', 'corners', 30.0, True, True)
     def __init__(self, path: str, open_fn: Callable = os.open, ioctl_fn: Callable = fcntl.ioctl,
                  close_fn: Callable = os.close) -> None:
         self._fd = open_fn(path, os.O_RDWR)
@@ -121,7 +123,7 @@ class LightsHandle:
                 self._retry_at = self._clock() + self._retry_s
                 return False
         try:
-            getattr(self._lights, command)(*args)
+            result = getattr(self._lights, command)(*args)
         except OSError:
             if not self._lost:
                 log.warning("[ambideck] lost the light controller; looking for it again", exc_info=True)
@@ -136,7 +138,7 @@ class LightsHandle:
         if self._lost:
             log.info("[ambideck] light controller back")
             self._lost = False
-        return True
+        return result is not False
 
     def show(self, zones) -> bool:
         return self._do("show", zones)
@@ -147,3 +149,30 @@ class LightsHandle:
     def off(self) -> bool:
         return self._do("off")
 
+    def begin_follow(self) -> None:
+        with self._lock:
+            if self._lights is not None and hasattr(self._lights, 'begin_follow'):
+                self._lights.begin_follow()
+
+    def fallback(self, keep_following: bool = False) -> bool:
+        with self._lock:
+            if self._lights is not None and hasattr(self._lights, 'fallback'):
+                return self._lights.fallback(keep_following)
+            return self._do_locked('rainbow')
+
+    def status(self) -> dict:
+        with self._lock:
+            if self._lights is not None and hasattr(self._lights, 'status'):
+                return self._lights.status()
+            return {'supported': self._lights is not None}
+
+    def pause(self) -> None:
+        with self._lock:
+            if self._lights is not None and hasattr(self._lights, 'pause'):
+                self._lights.pause()
+
+    def close(self) -> None:
+        with self._lock:
+            device, self._lights = self._lights, None
+        if device is not None and hasattr(device, 'close'):
+            device.close()

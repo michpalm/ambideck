@@ -1,5 +1,6 @@
 import { DropdownItem, PanelSection, PanelSectionRow, SliderField, ToggleField } from '@decky/ui';
-import { useSituation, useSupported } from '../app';
+import { useSituation, useSupported, useDeviceStatus } from '../app';
+import { deviceDescription } from '../deviceStatus';
 import { isOnForGame, settings, useSettings } from '../settings';
 import { boostLabel, DARK_OPTIONS, LAYOUT_OPTIONS, OUTSIDE_OPTIONS, SPEED_OPTIONS } from './options';
 
@@ -7,17 +8,19 @@ export function SettingsPanel() {
     const s = useSettings();
     const { appId, capturing } = useSituation();
     const supported = useSupported();
+    const device = useDeviceStatus();
 
     if (supported === false) {
         return (
             <PanelSection>
-                <PanelSectionRow><div>This device isn't supported</div></PanelSectionRow>
+                <PanelSectionRow><div>{device?.unavailableReason || "This device isn't supported"}</div></PanelSectionRow>
             </PanelSection>
         );
     }
 
     return (
         <PanelSection>
+            {device?.deviceName && <PanelSectionRow><div>{deviceDescription(device)}</div></PanelSectionRow>}
             {capturing && (
                 <PanelSectionRow><div>Paused while Showreel records</div></PanelSectionRow>
             )}

@@ -6,6 +6,8 @@ import type { FollowSettings } from './types';
 export interface ControllerDeps {
     backend: Backend;
     hueSync: HueSync;
+    canUseHueSync?(): boolean;
+    canUseDevice?(): boolean;
     later(fn: () => void, ms: number): () => void; // returns cancel
 }
 
@@ -24,6 +26,9 @@ export function createController(deps: ControllerDeps) {
     let ctx: Ctx = { appId: null, onCharger: false };
     let cancelRepeat: (() => void) | null = null;
     let queue: Promise<void> = Promise.resolve();
+    let requested: { decision: Decision; settings: FollowSettings; ctx: Ctx } | null = null;
+    const useHueSync = () => deps.canUseHueSync?.() ?? true;
+    const hueSyncPresent = () => useHueSync() && deps.hueSync.present();
 
     const enqueue = (job: () => Promise<void>): Promise<void> => {
         queue = queue.then(job).catch((error) => console.error('[ambideck] controller step failed', error));
@@ -42,23 +47,29 @@ export function createController(deps: ControllerDeps) {
         }), REPEAT_MS);
     };
     const takeOver = async () => {
-        if (deps.hueSync.present()) await deps.hueSync.pause();
+        if (hueSyncPresent()) await deps.hueSync.pause();
     };
     /** keepFollowing: the stream is only lost for now, so the backend keeps retrying behind the rainbow. */
     const restore = async (keepFollowing = false) => {
-        const result = await deps.hueSync.restore(ctx.appId, ctx.onCharger);
-        if (result === 'unavailable') await deps.backend.rainbow(keepFollowing);
+        const result = useHueSync() ? await deps.hueSync.restore(ctx.appId, ctx.onCharger) : 'unavailable';
+        if (result === 'unavailable') await deps.backend.fallback(keepFollowing);
     };
     const handBack = async () => {
         try {
             await deps.backend.stop();
         } finally {
             await restore();
-            if (deps.hueSync.present()) repeat(restore);
+            if (hueSyncPresent()) repeat(restore);
         }
     };
 
     async function run(decision: Decision, nextFollow: FollowSettings, nextCtx: Ctx): Promise<void> {
+        if (deps.canUseDevice?.() === false) {
+            cancel();
+            current = { kind: 'unknown' };
+            await deps.backend.stop();
+            return;
+        }
         const previous = current;
         const sameSettings = JSON.stringify(follow) === JSON.stringify(nextFollow);
         if (JSON.stringify(previous) === JSON.stringify(decision) && sameSettings) {
@@ -68,7 +79,7 @@ export function createController(deps: ControllerDeps) {
             if (decision.kind === 'follow' && appChanged) {
                 cancel();
                 await takeOver();
-                if (deps.hueSync.present()) repeat(takeOver);
+                if (hueSyncPresent()) repeat(takeOver);
             }
             return;
         }
@@ -89,7 +100,7 @@ export function createController(deps: ControllerDeps) {
                 if (previous.kind !== 'follow') {
                     cancel();
                     await takeOver();
-                    if (deps.hueSync.present()) repeat(takeOver);
+                    if (hueSyncPresent()) repeat(takeOver);
                 }
                 await deps.backend.follow(nextFollow);
                 return;
@@ -97,7 +108,7 @@ export function createController(deps: ControllerDeps) {
                 cancel();
                 await takeOver();
                 await deps.backend.off();
-                if (deps.hueSync.present()) repeat(takeOver);
+                if (hueSyncPresent()) repeat(takeOver);
                 return;
             case 'pause':
                 cancel();
@@ -112,8 +123,16 @@ export function createController(deps: ControllerDeps) {
     }
 
     return {
-        apply: (decision: Decision, nextFollow: FollowSettings, nextCtx: Ctx) =>
-            enqueue(() => run(decision, nextFollow, nextCtx)),
+        apply: (decision: Decision, nextFollow: FollowSettings, nextCtx: Ctx) => {
+            requested = { decision, settings: nextFollow, ctx: nextCtx };
+            return enqueue(() => run(decision, nextFollow, nextCtx));
+        },
+        refresh: () => enqueue(async () => {
+            if (!requested) return;
+            cancel();
+            current = { kind: 'unknown' };
+            await run(requested.decision, requested.settings, requested.ctx);
+        }),
         chargerChanged: () => enqueue(async () => {
             if (HAS_LIGHTS.has(current.kind)) await takeOver();
         }),

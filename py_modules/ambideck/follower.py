@@ -89,7 +89,8 @@ class Follower:
             generation = self._generation
         hz = SPEEDS[self._settings["speed"]][1]
         capture = self._make_capture(self.on_frame, self.on_state, hz)
-        self._state = "connecting"
+        with self._lock:
+            self._state = "connecting"
         self._connected_at = self._clock()  # before start(): a tick during pw-dump must see a fresh timestamp
         started = capture.start()  # runs pw-dump: slow enough for stop() to happen meanwhile
         previous = None
@@ -111,18 +112,38 @@ class Follower:
         """due: when the failed retry was scheduled, so retries stay RETRY_S apart however late the tick was."""
         now = self._clock()
         self._retry_at = now + self.RETRY_S if due is None else max(due + self.RETRY_S, now)
-        if self._state != "waiting":
-            self._state = "waiting"
+        changed = False
+        with self._lock:
+            if self._state != "waiting":
+                if hasattr(self._lights, 'pause'):
+                    self._lights.pause()
+                self._state = "waiting"
+                changed = True
+        if changed:
             log.info("[ambideck] waiting for gamescope's stream")
             self._emit("follow_state", "waiting")
 
+    def fallback_if_waiting(self, action: Callable[[], None]) -> bool:
+        """A delayed waiting RPC must not override a newer streaming transition."""
+        with self._lock:
+            if not self._wanted or self._state not in ('waiting', 'connecting'):
+                return False
+            action()
+            return True
+
     def on_state(self, state: str) -> None:  # PipeWire thread: never stop the capture here
-        if state == "streaming" and self._state != "following":
-            self._state = "following"
+        changed = False
+        with self._lock:
+            if state == "streaming" and self._wanted and self._state != "following":
+                if hasattr(self._lights, 'begin_follow'):
+                    self._lights.begin_follow()
+                self._state = "following"
+                changed = True
+            elif state in ("error", "unconnected") and self._wanted:
+                self._lost = True
+        if changed:
             log.info("[ambideck] following the screen")
             self._emit("follow_state", "following")
-        elif state in ("error", "unconnected") and self._wanted:
-            self._lost = True
 
     def on_frame(self, data: bytes, width: int, height: int, stride: int) -> None:  # PipeWire thread
         if not self._wanted:

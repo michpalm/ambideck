@@ -8,18 +8,14 @@ from ambideck.capture import GamescopeCapture, live_video_serial, session_env
 from ambideck.capture_lock import capture_locked, serial_unless_locked
 from ambideck.display import charger_connected, external_display_connected
 from ambideck.kv import KvStore
-from ambideck.lights import Lights, find_hidraw
+from ambideck.rgb.factory import detect
+from ambideck.rgb.output import OutputWorker
 
 LOG = "[ambideck]"
 KV = KvStore(os.path.join(decky.DECKY_PLUGIN_SETTINGS_DIR, "data.json"))
 # The backend runs as root; PipeWire lives in the session user's runtime dir.
 os.environ.update(session_env(os.stat(decky.DECKY_USER_HOME).st_uid))
 HUESYNC_DIR = os.path.join(os.path.dirname(decky.DECKY_PLUGIN_DIR), "HueSync")
-
-
-def find_lights():
-    path = find_hidraw()
-    return Lights(path) if path else None
 
 
 class Plugin:
@@ -29,8 +25,10 @@ class Plugin:
         def emit(event, *args):
             asyncio.run_coroutine_threadsafe(decky.emit(event, *args), loop)
 
+        self.output = OutputWorker(detect)
+        self.output.start()
         self.backend = Backend(
-            find_lights=find_lights,
+            find_lights=lambda: self.output,
             docked=external_display_connected,
             charger=charger_connected,
             emit=emit,
@@ -44,7 +42,10 @@ class Plugin:
         decky.logger.info(f"{LOG} backend started")
 
     async def _unload(self):
-        await asyncio.to_thread(self.backend.shutdown)
+        try:
+            await asyncio.to_thread(self.backend.shutdown)
+        finally:
+            await asyncio.to_thread(self.output.close)
         decky.logger.info(f"{LOG} backend stopped")
 
     async def kv_get(self, key: str):
@@ -65,6 +66,9 @@ class Plugin:
 
     async def rainbow(self, keep_following: bool = False) -> None:
         await asyncio.to_thread(self.backend.rainbow, bool(keep_following))
+
+    async def fallback(self, keep_following: bool = False) -> None:
+        await asyncio.to_thread(self.backend.fallback, bool(keep_following))
 
     async def off(self) -> None:
         await asyncio.to_thread(self.backend.off)

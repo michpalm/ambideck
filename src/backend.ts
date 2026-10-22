@@ -1,8 +1,15 @@
 import { callable } from '@decky/api';
 import type { FollowSettings, Zones } from './types';
 
-export interface Status {
+export interface LightStatus {
     supported: boolean;
+    deviceName?: string | null;
+    deviceLayout?: 'corners' | 'sides' | 'shared' | null;
+    hueSync?: boolean;
+    unavailableReason?: string | null;
+}
+
+export interface Status extends LightStatus {
     docked: boolean;
     onCharger: boolean;
     capturing: boolean;
@@ -14,11 +21,12 @@ export const backend = {
     follow: callable<[settings: FollowSettings], void>('follow'),
     show: callable<[zones: Zones], void>('show'),
     rainbow: callable<[keepFollowing?: boolean], void>('rainbow'),
+    fallback: callable<[keepFollowing?: boolean], void>('fallback'),
     off: callable<[], void>('off'),
     stop: callable<[], void>('stop'),
 };
 
-export type Backend = Pick<typeof backend, 'follow' | 'show' | 'rainbow' | 'off' | 'stop'>;
+export type Backend = Pick<typeof backend, 'follow' | 'show' | 'rainbow' | 'fallback' | 'off' | 'stop'>;
 
 export interface KvBackend {
     get(key: string): Promise<unknown>;
