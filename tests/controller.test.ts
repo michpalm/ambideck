@@ -6,13 +6,14 @@ import type { FollowSettings } from '../src/types';
 const FOLLOW: FollowSettings = { layout: 'corners', brightness: 70, boost: 58, speed: 'balanced', dark: 'glow' };
 const CTX = { appId: '1', onCharger: false };
 
-function setup(opts: { present?: boolean; restore?: RestoreResult; stopFails?: boolean } = {}) {
+function setup(opts: { present?: boolean; restore?: RestoreResult; stopFails?: boolean; huesync?: boolean; available?: () => boolean } = {}) {
     const log: string[] = [];
     const pending: (() => void)[] = [];
     const backend = {
         follow: async (s: FollowSettings) => void log.push(`follow:${s.layout}`),
         show: async () => void log.push('show'),
-        rainbow: async (keep?: boolean) => void log.push(keep ? 'rainbow:keep' : 'rainbow'),
+        rainbow: async () => {},
+        fallback: async (keep?: boolean) => void log.push(keep ? 'fallback:keep' : 'fallback'),
         off: async () => void log.push('off'),
         stop: async () => {
             log.push('stop');
@@ -25,7 +26,7 @@ function setup(opts: { present?: boolean; restore?: RestoreResult; stopFails?: b
         restore: async () => (log.push('restore'), opts.restore ?? 'restored'),
     };
     const controller = createController({
-        backend, hueSync,
+        backend, hueSync, canUseHueSync: () => opts.huesync ?? true, canUseDevice: opts.available,
         later: (fn) => {
             pending.push(fn);
             return () => {
@@ -69,7 +70,7 @@ describe('controller', () => {
         const { controller, log } = setup({ present: false, restore: 'unavailable' });
         await controller.apply({ kind: 'follow' }, FOLLOW, CTX);
         await controller.apply({ kind: 'handBack' }, FOLLOW, CTX);
-        expect(log).toEqual(['follow:corners', 'stop', 'restore', 'rainbow']);
+        expect(log).toEqual(['follow:corners', 'stop', 'restore', 'fallback']);
     });
     it('does nothing for a hand-back when it already handed back (start-up included)', async () => {
         const { controller, log } = setup();
@@ -143,7 +144,7 @@ describe('controller', () => {
         await controller.apply({ kind: 'follow' }, FOLLOW, CTX);
         log.length = 0;
         await controller.followState('waiting');
-        expect(log).toEqual(['restore', 'rainbow:keep']);
+        expect(log).toEqual(['restore', 'fallback:keep']);
     });
     it('still restores HueSync when stopping the backend fails, and retries the decision next time', async () => {
         const { controller, log } = setup({ stopFails: true });
@@ -156,3 +157,28 @@ describe('controller', () => {
         expect(log).toEqual(['stop', 'restore']);
     });
 });
+
+ it('never calls HueSync on non-Ally devices', async () => {
+    const { controller, log, flushLater } = setup({ huesync: false });
+    await controller.apply({ kind: 'follow' }, FOLLOW, CTX);
+    await controller.followState('waiting');
+    await controller.followState('following');
+    await controller.apply({ kind: 'handBack' }, FOLLOW, CTX);
+    await flushLater();
+    expect(log).toEqual(['follow:corners', 'fallback:keep', 'stop', 'fallback']);
+ });
+ it('refresh resumes the requested action after hardware appears', async () => {
+    let available = false;
+    const { controller, log } = setup({ huesync: false, available: () => available });
+    await controller.apply({ kind: 'follow' }, FOLLOW, CTX);
+    expect(log).toEqual(['stop']);
+    available = true;
+    await controller.refresh();
+    expect(log).toEqual(['stop', 'follow:corners']);
+    available = false;
+    await controller.refresh();
+    expect(log.at(-1)).toBe('stop');
+    available = true;
+    await controller.refresh();
+    expect(log.at(-1)).toBe('follow:corners');
+ });

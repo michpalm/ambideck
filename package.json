@@ -1,7 +1,7 @@
 {
   "name": "ambideck",
-  "version": "1.2.0",
-  "description": "Ambilight for the ROG Xbox Ally: the stick lights follow what's on screen",
+  "version": "1.3.0",
+  "description": "Ambilight for compatible handheld PCs: RGB lights follow what's on screen",
   "type": "module",
   "scripts": {
     "build": "rollup -c",

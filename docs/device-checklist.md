@@ -2,6 +2,12 @@
 
 Run after installing a new build (Decky → Developer → Install plugin from URL, `scripts/serve.sh`).
 
+Record model, USB firmware, OS/kernel and controller mode with the results.
+The historical rows below describe Ally; apply spatial expectations to the
+detected capability. New multi-device RGB and output-worker hardware checks
+are outstanding until recorded for each device. CPU/power figures below are
+historical Ally targets, not measurements of other backends.
+
 | # | Check | Expected |
 |---|---|---|
 | 1 | Quick Access → Ambideck | All controls shown; "In this game" only while a game runs |
@@ -33,3 +39,14 @@ Run after installing a new build (Decky → Developer → Install plugin from UR
 | 27 | Remove the lock | Following resumes within ~1 s; `pw-dump` shows the gamescope format at 128×72 |
 | 28 | Lock with a dead PID (`999999`) | Ignored; Ambideck keeps following |
 | 29 | Rows 26–27 | No "out of buffers" in `journalctl --user -u gamescope-session` |
+| 30 | Detected device description | Correct name and Four zones / Left and right colours / One shared colour |
+| 31 | Red left / blue right test image | Four-zone/sides devices place colours correctly; shared devices show one blended colour |
+| 32 | Quit or disable without HueSync | Native rainbow on Ally/Lenovo; static last-frame average elsewhere; soft white before the first frame |
+| 33 | Outside games = Off, then Follow | All controlled lights turn off, then follow again |
+| 34 | Start with controller absent, then attach | Status updates and requested following starts without reloading the plugin |
+| 35 | Suspend/resume and detach/reattach | Device redetected; no stale descriptor or permanently unsupported state |
+| 36 | HueSync installed on non-Ally | No Ally-specific HueSync lighting calls; device fallback works |
+| 37 | Other daemon changes RGB while Ambideck runs | Record any contention; controller mappings, buttons and input mode remain unchanged |
+| 38 | Serial port busy / inaccessible | Clear unavailable status; no daemon stopped and no arbitrary serial port probed |
+| 39 | Capture temporarily unavailable and recorder lock/unlock | Handback cancels stale frames; following resumes with the selected settings |
+| 40 | Unload/reload five times | No stale RGB writer, open descriptor or serial-lock leak |

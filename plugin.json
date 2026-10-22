@@ -5,7 +5,7 @@
   "api_version": 1,
   "publish": {
     "tags": ["rgb", "lighting", "root"],
-    "description": "Ambilight for the ROG Xbox Ally: the stick lights follow what's on screen.",
+    "description": "Ambilight for compatible handheld PCs: RGB lights follow what's on screen.",
     "image": ""
   }
 }
